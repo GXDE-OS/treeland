@@ -4,13 +4,13 @@
 #include <DSingleton>
 
 #include <QObject>
+#include <QCommandLineOption>
 
 #include <memory>
 #include <optional>
 
 class QCoreApplication;
 class QCommandLineParser;
-class QCommandLineOption;
 
 DCORE_USE_NAMESPACE
 
@@ -25,6 +25,8 @@ public:
     std::optional<QString> run() const;
     bool useLockScreen() const;
     std::optional<QStringList> unescapeExecArgs(const QString &str) noexcept;
+    bool tryExec() const;
+    bool disableDebugView() const;
 
 private:
     CmdLine();
@@ -35,4 +37,6 @@ private:
     std::unique_ptr<QCommandLineParser> m_parser;
     std::unique_ptr<QCommandLineOption> m_run;
     std::unique_ptr<QCommandLineOption> m_lockScreen;
+    QCommandLineOption m_tryExec;
+    QCommandLineOption m_disableDebugView;
 };
