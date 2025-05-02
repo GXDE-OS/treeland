@@ -29,6 +29,8 @@ Build-Depends: cmake (>= 3.4~),
                treeland-protocols,
                libpam0g-dev,
                libjemalloc-dev,
+               libaudit-dev,
+               systemd-dev,
 Standards-Version: 4.6.0
 Section: dde
 Homepage: https://github.com/linuxdeepin/treeland.git
