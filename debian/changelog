@@ -1,4 +1,10 @@
-treeland (0.5.20) unstable; urgency=medium
+treeland (0.5.20gxde1) UNRELEASED; urgency=medium
+
+  * 补充 qml6-module-qtquick-window 依赖
+
+ -- gfdgd_xi <3025613752@qq.com>  Wed, 09 Jul 2025 19:22:47 +0800
+
+treeland (0.5.20gxde1) unstable; urgency=medium
 
   * fix: activeColor not saved to dconfig
   * fix: send error output enter for layer shell

@@ -42,6 +42,7 @@ Architecture: any
 Multi-Arch: same
 Depends: qml6-module-qtquick-layouts,
          qml6-module-qtquick-particles,
+         qml6-module-qtquick-window,
          treeland-data (= ${source:Version}),
          xwayland,
          ${shlibs:Depends},
