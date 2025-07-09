@@ -7,6 +7,9 @@ if(POLICY CMP0071)
     cmake_policy(SET CMP0071 NEW)
 endif()
 
+# Include translation utilities
+include(${CMAKE_SOURCE_DIR}/cmake/TranslationUtils.cmake)
+
 find_package(Dtk6 REQUIRED COMPONENTS Core Declarative SystemSettings)
 if (NOT DISABLE_DDM)
     find_package(DDM REQUIRED COMPONENTS Auth Common)
@@ -19,7 +22,6 @@ pkg_search_module(WAYLAND REQUIRED IMPORTED_TARGET wayland-server)
 pkg_search_module(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
 pkg_search_module(XCB REQUIRED IMPORTED_TARGET xcb)
 pkg_check_modules(PAM REQUIRED IMPORTED_TARGET pam)
-pkg_check_modules(JEMALLOC REQUIRED IMPORTED_TARGET jemalloc)
 # qt_finalize_target will collect all executable's private dependencies that are CMake targets
 
 qt_add_dbus_adaptor(DBUS_ADAPTOR "${CMAKE_SOURCE_DIR}/misc/dbus/org.deepin.compositor1.xml" "core/treeland.h" Treeland::Treeland)
@@ -80,6 +82,8 @@ qt_add_qml_module(libtreeland
         config/treelandconfig.h
         core/layersurfacecontainer.cpp
         core/layersurfacecontainer.h
+        core/popupsurfacecontainer.cpp
+        core/popupsurfacecontainer.h
         core/qmlengine.cpp
         core/qmlengine.h
         core/rootsurfacecontainer.cpp
@@ -230,20 +234,8 @@ qt_add_resources(libtreeland "treeland_assets"
         ${PROJECT_RESOURCES_DIR}/icons/logo.svg
 )
 
-set(TRANSLATED_FILES)
-qt_add_lupdate(
-    SOURCE_TARGETS libtreeland
-    TS_FILES
-        ${CMAKE_SOURCE_DIR}/translations/treeland.zh_CN.ts
-        ${CMAKE_SOURCE_DIR}/translations/treeland.en_US.ts
-    NO_GLOBAL_TARGET
-)
-qt_add_lrelease(
-    TS_FILES
-        ${CMAKE_SOURCE_DIR}/translations/treeland.zh_CN.ts
-        ${CMAKE_SOURCE_DIR}/translations/treeland.en_US.ts
-    QM_FILES_OUTPUT_VARIABLE TRANSLATED_FILES
-)
+# Use translation utilities to setup main translations
+setup_main_translations(libtreeland)
 
 target_include_directories(libtreeland
     PUBLIC
@@ -279,7 +271,6 @@ target_link_libraries(libtreeland
         PkgConfig::PIXMAN
         PkgConfig::WAYLAND
         PkgConfig::LIBINPUT
-        PkgConfig::JEMALLOC
         $<$<NOT:$<BOOL:${DISABLE_DDM}>>:DDM::Auth>
         $<$<NOT:$<BOOL:${DISABLE_DDM}>>:DDM::Common>
         $<$<NOT:$<BOOL:${DISABLE_DDM}>>:PkgConfig::PAM>
@@ -325,4 +316,3 @@ target_link_libraries(treeland-sd
 )
 
 install(TARGETS treeland-sd RUNTIME DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}")
-install(FILES ${TRANSLATED_FILES} DESTINATION ${TREELAND_COMPONENTS_TRANSLATION_DIR})

@@ -1,3 +1,10 @@
+treeland (0.5.21gxde1) UNRELEASED; urgency=medium
+
+  * Non-maintainer upload.
+  * 调整所需依赖
+
+ -- gfdgd_xi <3025613752@qq.com>  Wed, 09 Jul 2025 08:52:34 +0800
+
 treeland (0.5.21) unstable; urgency=medium
 
   * fix: inputted password and capsIndicator button are covered

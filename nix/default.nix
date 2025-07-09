@@ -3,6 +3,7 @@
   lib,
   nix-filter,
   cmake,
+  ninja,
   extra-cmake-modules,
   pkg-config,
   wayland-scanner,
@@ -25,7 +26,6 @@
   pam,
   libxcrypt,
   libinput,
-  jemalloc,
   nixos-artwork,
 }:
 
@@ -57,6 +57,7 @@ stdenv.mkDerivation (finalAttrs: {
 
   nativeBuildInputs = [
     cmake
+    ninja
     extra-cmake-modules
     pkg-config
     wayland-scanner
@@ -83,7 +84,6 @@ stdenv.mkDerivation (finalAttrs: {
     pam
     libxcrypt
     libinput
-    jemalloc
   ];
 
   cmakeFlags = [
