@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25.0)
 
 project(Treeland
-    VERSION 0.2.2
+    VERSION 0.7.0
     LANGUAGES CXX C)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -16,10 +16,10 @@ include(FeatureSummary)
 
 include(cmake/DefineTarget.cmake)
 
-option(WITH_SUBMODULE_WAYLIB "Use the waylib from git submodule" OFF)
+option(WITH_SUBMODULE_WAYLIB "Use the waylib from git submodule" ON)
 add_feature_info(submodule_waylib WITH_SUBMODULE_WAYLIB "Use waylib from submodule")
 
-option(ADDRESS_SANITIZER "Enable address sanitize" OFF)
+option(ADDRESS_SANITIZER "Enable address sanitizer" OFF)
 add_feature_info(ASanSupport ADDRESS_SANITIZER "https://github.com/google/sanitizers/wiki/AddressSanitizer")
 
 option(BUILD_TREELAND_EXAMPLES "Build clients demo to test treeland" OFF)
@@ -35,12 +35,17 @@ if (ADDRESS_SANITIZER)
     add_compile_options(-fsanitize=address -fno-optimize-sibling-calls -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address)
 endif()
+# NOTE: Qt keywords conflict with wlroots. but dtksystemsettings still uses it.
+# add_definitions("-DQT_NO_KEYWORDS")
+
+# NOTE: Enable Qt logging with context.
+add_definitions("-DQT_MESSAGELOGCONTEXT")
 
 set(LOCAL_QML_IMPORT_PATH "${PROJECT_BINARY_DIR}/qt/qml")
 
 if(WITH_SUBMODULE_WAYLIB)
     set(WITH_SUBMODULE_QWLROOTS ON)
-    include(${CMAKE_CURRENT_SOURCE_DIR}/waylib/qwlroots/cmake/WaylandScannerHelpers.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/qwlroots/cmake/WaylandScannerHelpers.cmake)
     add_subdirectory(waylib)
     list(APPEND LOCAL_QML_IMPORT_PATH "${PROJECT_BINARY_DIR}/waylib/src/server")
 else()
@@ -53,9 +58,7 @@ set(QML_IMPORT_PATH "${LOCAL_QML_IMPORT_PATH}" CACHE STRING "For LSP" FORCE)
 find_package(PkgConfig REQUIRED)
 find_package(Qt6 CONFIG REQUIRED Core DBus Gui Qml Quick QuickControls2 LinguistTools Test QuickTest)
 
-set(wlr wlroots-0.18)
-set(WLROOTS_MINIMUM_REQUIRED 0.18.0)
-pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET ${wlr}>=${WLROOTS_MINIMUM_REQUIRED})
+pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET wlroots-0.19)
 
 qt_standard_project_setup(REQUIRES 6.8)
 

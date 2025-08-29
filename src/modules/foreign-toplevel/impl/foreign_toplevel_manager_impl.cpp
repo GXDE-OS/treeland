@@ -10,6 +10,7 @@
 #include <qwseat.h>
 
 #include <cassert>
+#include "common/treelandlogging.h"
 
 using QW_NAMESPACE::qw_display, QW_NAMESPACE::qw_output;
 
@@ -56,7 +57,7 @@ static void treeland_dock_preview_context_handle_show(struct wl_client *client,
                                                       int32_t x,
                                                       int32_t y,
                                                       uint32_t direction);
-static void treeland_dock_preview_context_handle_show_tooltip(struct wl_client *client,
+static void treeland_dock_preview_context_handle_show_tooltip([[maybe_unused]] struct wl_client *client,
                                                               struct wl_resource *resource,
                                                               const char *tooltip,
                                                               int32_t x,
@@ -185,7 +186,7 @@ static void toplevel_send_fullscreen_event(struct wl_resource *resource,
     Q_EMIT toplevel->requestFullscreen(&event);
 }
 
-static void treeland_dock_preview_context_handle_show_tooltip(struct wl_client *client,
+static void treeland_dock_preview_context_handle_show_tooltip([[maybe_unused]] struct wl_client *client,
                                                               struct wl_resource *resource,
                                                               const char *tooltip,
                                                               int32_t x,
@@ -644,12 +645,12 @@ static void treeland_dock_preview_context_handle_show([[maybe_unused]] struct wl
     std::vector<uint32_t> s;
     const uint32_t *data = reinterpret_cast<const uint32_t *>(surfaces->data);
     const size_t count = surfaces->size / sizeof(uint32_t);
-    for (int i = 0; i != count; ++i) {
+    for (size_t i = 0; i != count; ++i) {
         s.push_back(data[i]);
     }
 
     if (!surfaces->size)
-        qCritical() << "get empty surface to dock preview!";
+        qCCritical(treelandProtocol) << "Got empty surface list for dock preview!";
 
     treeland_dock_preview_context_v1_preview_event event = {
         .toplevel = dock_preview,

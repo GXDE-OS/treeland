@@ -13,6 +13,7 @@
 #include <wqmlcreator.h>
 #include <wseat.h>
 #include <wxdgdecorationmanager.h>
+#include <wextforeigntoplevellistv1.h>
 
 Q_MOC_INCLUDE(<wtoplevelsurface.h>)
 Q_MOC_INCLUDE(<wxdgsurface.h>)
@@ -48,6 +49,7 @@ class WSurface;
 class WToplevelSurface;
 class WSurfaceItem;
 class WForeignToplevel;
+class WExtForeignToplevelListV1;
 class WOutputManagerV1;
 class WLayerSurface;
 WAYLIB_SERVER_END_NAMESPACE
@@ -88,8 +90,14 @@ class IMultitaskView;
 class LockScreenInterface;
 class ILockScreen;
 class UserModel;
+class DDMInterfaceV1;
 struct wlr_idle_inhibitor_v1;
 struct wlr_output_power_v1_set_mode_event;
+struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request;
+
+QW_BEGIN_NAMESPACE
+class qw_ext_foreign_toplevel_image_capture_source_manager_v1;
+QW_END_NAMESPACE
 
 class Helper : public WSeatEventFilter
 {
@@ -193,9 +201,17 @@ public:
 
     void setCurrentMode(CurrentMode mode);
 
-    void showLockScreen();
+    void showLockScreen(bool switchToGreeter = true);
 
     Output* getOutputAtCursor() const;
+
+    UserModel *userModel() const;
+    DDMInterfaceV1 *ddmInterfaceV1() const;
+
+    void activateSession();
+    void deactivateSession();
+    void enableRender();
+    void disableRender();
 public Q_SLOTS:
     void activateSurface(SurfaceWrapper *wrapper, Qt::FocusReason reason = Qt::OtherFocusReason);
     void forceActivateSurface(SurfaceWrapper *wrapper,
@@ -219,6 +235,8 @@ Q_SIGNALS:
 private Q_SLOTS:
     void onShowDesktop();
     void deleteTaskSwitch();
+    void onPrepareForSleep(bool sleep);
+    void onSessionNew(const QString &sessionId, const QDBusObjectPath &objectPath);
 
 private:
     void onOutputAdded(WOutput *output);
@@ -242,16 +260,14 @@ private:
     void onSurfaceWrapperAboutToRemove(SurfaceWrapper *wrapper);
     void handleRequestDrag([[maybe_unused]] WSurface *surface);
     void handleLockScreen(LockScreenInterface *lockScreen);
-    void onSessionNew(const QString &sessionId, const QDBusObjectPath &sessionPath);
     void onSessionLock();
     void onSessionUnlock();
+    void handleNewForeignToplevelCaptureRequest(wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request *request);
 
 private:
     void allowNonDrmOutputAutoChangeMode(WOutput *output);
 
     int indexOfOutput(WOutput *output) const;
-
-    void setOutputProxy(Output *output);
 
     SurfaceWrapper *keyboardFocusSurface() const;
     void requestKeyboardFocusForSurface(SurfaceWrapper *newActivateSurface, Qt::FocusReason reason);
@@ -291,11 +307,12 @@ private:
     QQuickItem *m_dockPreview = nullptr;
 
     // gesture
+    WServer *m_server = nullptr;
+    RootSurfaceContainer *m_rootSurfaceContainer = nullptr;
     TogglableGesture *m_multiTaskViewGesture = nullptr;
     TogglableGesture *m_windowGesture = nullptr;
 
     // wayland helper
-    WServer *m_server = nullptr;
     WSocket *m_socket = nullptr;
     WSeat *m_seat = nullptr;
     WBackend *m_backend = nullptr;
@@ -307,10 +324,12 @@ private:
     qw_idle_notifier_v1 *m_idleNotifier = nullptr;
     qw_idle_inhibit_manager_v1 *m_idleInhibitManager = nullptr;
     qw_output_power_manager_v1 *m_outputPowerManager = nullptr;
+    qw_ext_foreign_toplevel_image_capture_source_manager_v1 *m_foreignToplevelImageCaptureManager = nullptr;
     ShellHandler *m_shellHandler = nullptr;
     WXWayland *m_defaultXWayland = nullptr;
     WXdgDecorationManager *m_xdgDecorationManager = nullptr;
     WForeignToplevel *m_foreignToplevel = nullptr;
+    WExtForeignToplevelListV1 *m_extForeignToplevelListV1 = nullptr;
     ForeignToplevelV1 *m_treelandForeignToplevel = nullptr;
     ShortcutV1 *m_shortcut = nullptr;
     PersonalizationV1 *m_personalization = nullptr;
@@ -321,6 +340,7 @@ private:
     DDEShellManagerInterfaceV1 *m_ddeShellV1 = nullptr;
     VirtualOutputV1 *m_virtualOutput = nullptr;
     PrimaryOutputV1 *m_primaryOutputV1 = nullptr;
+    DDMInterfaceV1 *m_ddmInterfaceV1 = nullptr;
 
     // private data
     QList<Output *> m_outputList;
@@ -328,7 +348,6 @@ private:
     QList<qw_idle_inhibitor_v1 *> m_idleInhibitors;
 
     SurfaceWrapper *m_activatedSurface = nullptr;
-    RootSurfaceContainer *m_rootSurfaceContainer = nullptr;
     LockScreen *m_lockScreen = nullptr;
     float m_animationSpeed = 1.0;
     quint64 m_taskAltTimestamp = 0;

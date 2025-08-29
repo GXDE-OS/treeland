@@ -4,12 +4,14 @@
 #include "shellhandler.h"
 
 #include "core/qmlengine.h"
+#include "popupsurfacecontainer.h"
 #include "layersurfacecontainer.h"
 #include "modules/dde-shell/ddeshellmanagerinterfacev1.h"
 #include "rootsurfacecontainer.h"
 #include "seat/helper.h"
 #include "surface/surfacewrapper.h"
 #include "workspace/workspace.h"
+#include "common/treelandlogging.h"
 
 #include <xcb/xcb.h>
 
@@ -29,8 +31,6 @@
 #include <qwcompositor.h>
 #include <qwxwaylandsurface.h>
 
-Q_LOGGING_CATEGORY(qLcShellHandler, "treeland.shell.handler")
-
 QW_USE_NAMESPACE
 WAYLIB_SERVER_USE_NAMESPACE
 
@@ -43,7 +43,7 @@ ShellHandler::ShellHandler(RootSurfaceContainer *rootContainer)
     , m_workspace(new Workspace(rootContainer))
     , m_topContainer(new LayerSurfaceContainer(rootContainer))
     , m_overlayContainer(new LayerSurfaceContainer(rootContainer))
-    , m_popupContainer(new SurfaceContainer(rootContainer))
+    , m_popupContainer(new PopupSurfaceContainer(rootContainer))
 {
     m_backgroundContainer->setZ(RootSurfaceContainer::BackgroundZOrder);
     m_bottomContainer->setZ(RootSurfaceContainer::BottomZOrder);
@@ -94,7 +94,7 @@ void ShellHandler::initLayerShell(WServer *server)
 WXWayland *ShellHandler::createXWayland(WServer *server,
                                         WSeat *seat,
                                         qw_compositor *compositor,
-                                        bool lazy)
+                                        [[maybe_unused]] bool lazy)
 {
     auto *xwayland = server->attach<WXWayland>(compositor, false);
     m_xwaylands.append(xwayland);
@@ -274,7 +274,7 @@ void ShellHandler::onXWaylandSurfaceAdded(WXWaylandSurface *surface)
     });
     surface->safeConnect(&qw_xwayland_surface::notify_dissociate, this, [this, surface] {
         auto wrapper = m_rootSurfaceContainer->getSurface(surface->surface());
-        qDebug() << "WXWayland::notify_dissociate" << surface << wrapper;
+        qCDebug(treelandShell) << "WXWayland::notify_dissociate" << surface << wrapper;
 
         Q_EMIT surfaceWrapperAboutToRemove(wrapper);
         m_rootSurfaceContainer->destroyForSurface(wrapper);
@@ -292,11 +292,11 @@ void ShellHandler::setupSurfaceActiveWatcher(SurfaceWrapper *wrapper)
                 parent = parent->parentSurface();
             }
             if (!parent) {
-                qCCritical(qLcShellHandler) << "A new popup without toplevel parent!";
+                qCCritical(treelandShell) << "A new popup without toplevel parent!";
                 return;
             }
             if (!parent->showOnWorkspace(m_workspace->current()->id())) {
-                qCWarning(qLcShellHandler)
+                qCWarning(treelandShell)
                     << "A popup active, but it's parent not in current workspace!";
                 return;
             }
@@ -348,7 +348,7 @@ void ShellHandler::setupSurfaceActiveWatcher(SurfaceWrapper *wrapper)
 void ShellHandler::onLayerSurfaceAdded(WLayerSurface *surface)
 {
     if (!surface->output() && !m_rootSurfaceContainer->primaryOutput()) {
-        qCWarning(qLcShellHandler) << "No output, will close layer surface!";
+        qCWarning(treelandShell) << "No output, will close layer surface!";
         surface->closed();
         return;
     }
@@ -372,7 +372,7 @@ void ShellHandler::onLayerSurfaceRemoved(WLayerSurface *surface)
 {
     auto wrapper = m_rootSurfaceContainer->getSurface(surface->surface());
     if (!wrapper) {
-        qWarning(qLcShellHandler) << "A layerSurface that not in any Container is removing!";
+        qCWarning(treelandShell) << "A layerSurface that not in any Container is removing!";
         return;
     }
     Q_EMIT surfaceWrapperAboutToRemove(wrapper);

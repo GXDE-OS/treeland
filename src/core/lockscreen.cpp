@@ -30,7 +30,7 @@ void LockScreen::lock()
 
     for (const auto &[k, v] : m_components) {
         v->setProperty("currentMode", static_cast<int>(LockScreen::CurrentMode::Lock));
-        QMetaObject::invokeMethod(v.get(), "start");
+        QMetaObject::invokeMethod(v.get(), "start", QVariant::fromValue(true));
     }
 }
 
@@ -44,7 +44,7 @@ void LockScreen::shutdown()
 
     for (const auto &[k, v] : m_components) {
         v->setProperty("currentMode", static_cast<int>(LockScreen::CurrentMode::Shutdown));
-        QMetaObject::invokeMethod(v.get(), "start");
+        QMetaObject::invokeMethod(v.get(), "start", QVariant::fromValue(true));
     }
 }
 
@@ -58,7 +58,7 @@ void LockScreen::switchUser()
 
     for (const auto &[k, v] : m_components) {
         v->setProperty("currentMode", static_cast<int>(LockScreen::CurrentMode::SwitchUser));
-        QMetaObject::invokeMethod(v.get(), "start");
+        QMetaObject::invokeMethod(v.get(), "start", QVariant::fromValue(true));
     }
 }
 
@@ -66,11 +66,10 @@ void LockScreen::addOutput(Output *output)
 {
     SurfaceContainer::addOutput(output);
 
-    auto engine = Helper::instance()->qmlEngine();
     auto *item = m_impl->createLockScreen(output, this);
 
     if (isVisible()) {
-        QMetaObject::invokeMethod(item, "start");
+        QMetaObject::invokeMethod(item, "start", QVariant::fromValue(false));
     }
 
     connect(item, SIGNAL(animationPlayed()), this, SLOT(onAnimationPlayed()));

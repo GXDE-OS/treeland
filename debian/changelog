@@ -1,10 +1,102 @@
-treeland (0.5.20gxde1) UNRELEASED; urgency=medium
+treeland (0.7.0) unstable; urgency=medium
 
-  * 补充 qml6-module-qtquick-window 依赖
+  * fix: fix treeland get stuck in lockscreen after crash recovery
+  * fix: occasional crash during stop preview item handling
+  * refactor: improve code robustness
+  * fix: occasional crash when closing x window
+  * fix: resolve brief black screen during standby
+  * chore: remove dde portal screen cast configuration
+  * fix: correct log category and add null check for surface activation
+  * fix: resolve window resize crash during image capture
+  * fix: fix wrong display render issue when switching VT too quickly
+  * Totally disable lockscreen animation when switching TTY to prevent
+    stuck for switching too quickly
+  * feat: Support TTY switching with DDM
+  * Updates for project TreeLand (#515)
+  * feat(waylib): add WBufferDumper utility for dumping buffer contents
+    to image files
+  * refactor: use unified CI build preset with Werror
+  * build: enable -Werror compiler flag
+  * fix: prevent crash during preview item handling (#512)
+  * fix: prevent cursor flicker during screen recording
+  * docs: add comprehensive logging guidelines and update module logging
+  * feat: add centralized logging system and standardize log usage
+  * feat: ssd title bar displays the window title information
+  * fix: maximize/restore icon in the SSD title bar displays incorrectly
+  * fix: resolve multiple compiler warnings
+  * fix(waylib): prevent duplicate signal connections using
+    Qt::UniqueConnection
+  * fix(waylib): prevent crash by safely managing textureChanged
+    connection
+  * fix: use exec to replace process and avoid duplicate logs in
+    treeland.sh
+  * fix(waylib): Occasional crash when moving the cursor
 
- -- gfdgd_xi <3025613752@qq.com>  Wed, 09 Jul 2025 19:22:47 +0800
+ -- rewine <luhongxu@uniontech.com>  Fri, 29 Aug 2025 10:23:45 +0800
 
-treeland (0.5.20gxde1) unstable; urgency=medium
+treeland (0.6.2) unstable; urgency=medium
+
+  * fix: resolve library versioning and installation path issues
+
+ -- rewine <luhongxu@uniontech.com>  Mon, 04 Aug 2025 17:42:40 +0800
+
+treeland (0.6.1) unstable; urgency=medium
+
+  * fix: improve D-Bus connection handling and QML hover visibility
+  * feat: CLI option: switch from --disable-debug-view to --enable-debug-
+    view
+  * fix(waylib): Specify required rendering flags in
+    WSGRenderFootprintNode
+
+ -- rewine <luhongxu@uniontech.com>  Fri, 01 Aug 2025 13:33:07 +0800
+
+treeland (0.6.0) unstable; urgency=medium
+
+  * fix: improve image capture error handling and code structure
+  * feat: add foreign toplevel image capture support
+  * feat: add image capture source support
+  * fix: remove unused quit full button and add helper activation
+  * fix: prevent title bar and window buttons from stealing focus
+  * feat: add wl_drm support
+  * feat: create ext-data-control manager
+  * fix: Handle VT switching keys (#469)
+  * feat: add Nix flake support for project configuration
+  * fix: prevent workspace moveSurfaceTo crash on null wrapper
+  * fix: remove redundant submodule options and configs
+  * chore: update nix dependencies and clean up configurations
+  * fix: Scaling animation not shown while return from shutdown page
+  * chore: Force Ninja build during deb packaging
+  * fix: add timeout to protocol tests
+  * feat: Upload build artifacts as zip archives
+  * chore: fix CI and enable independent builds
+  * refactor: merge qwlroots and waylib source code into treeland
+  * chore: Use treeland-specific seatd service
+  * feat: implement ext-foreign-toplevel-list
+  * i18n: Updates for project TreeLand (#440)
+  * chore: remove polkit rules for login1
+  * feat: add support for alpha modifier protocol
+  * fix: cannot export dbus services
+  * Revert "fix: should not maximize when client set maxsize"
+  * Updates for project TreeLand (#431)
+  * fix: Treeland does not exit when logging out of session
+  * fix: cannot use treeland user session mode
+  * fix: add [[maybe_unused]] attribute to unused parameters
+  * chore: improvement fixes the translation configuration
+  * feat: add popup surface container for handling popup windows
+  * chore: configure translation files and update Chinese translations
+  * chore: configure transifex translation files
+  * feat: adapt to wlroots-0.19
+  * refactor: remove jemalloc dependency
+
+ -- rewine <luhongxu@uniontech.com>  Thu, 31 Jul 2025 20:40:50 +0800
+
+treeland (0.5.21) unstable; urgency=medium
+
+  * fix: inputted password and capsIndicator button are covered
+
+ -- rewine <luhongxu@deepin.org>  Thu, 17 Apr 2025 15:17:48 +0800
+
+treeland (0.5.20) unstable; urgency=medium
 
   * fix: activeColor not saved to dconfig
   * fix: send error output enter for layer shell

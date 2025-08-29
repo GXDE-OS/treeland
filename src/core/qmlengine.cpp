@@ -8,6 +8,7 @@
 #include "output/output.h"
 #include "surface/surfacewrapper.h"
 #include "workspace/workspace.h"
+#include "common/treelandlogging.h"
 
 #include <woutput.h>
 #include <woutputitem.h>
@@ -53,10 +54,10 @@ QQuickItem *QmlEngine::createComponent(QQmlComponent &component,
         component.setInitialProperties(obj, properties);
     }
     auto item = qobject_cast<QQuickItem *>(obj);
-    Q_ASSERT_X(item, __func__, component.errorString().toStdString().c_str());
     if (!item) {
         qCFatal(qLcQmlEngine) << "Can't create component:" << component.errorString();
     }
+    QQmlEngine::setObjectOwnership(item, QQmlEngine::objectOwnership(parent));
     item->setParent(parent);
     item->setParentItem(parent);
     component.completeCreate();

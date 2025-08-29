@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "cmdline.h"
+#include "common/treelandlogging.h"
 
 #include <wordexp.h>
 
@@ -11,8 +12,6 @@
 
 #include <optional>
 
-Q_LOGGING_CATEGORY(qLcCmdline, "treeland.cmdline");
-
 CmdLine::CmdLine()
     : QObject()
     , m_parser(std::make_unique<QCommandLineParser>())
@@ -20,10 +19,10 @@ CmdLine::CmdLine()
     , m_lockScreen(std::make_unique<QCommandLineOption>("lockscreen",
                                                         "use lockscreen, need DDM auth socket"))
     , m_tryExec("try-exec", "Only try exec, don't show on screen")
-    , m_disableDebugView("disable-debug-view", "Disable debug view")
+    , m_enableDebugView("enable-debug-view", "Enable debug view")
 {
     m_parser->addHelpOption();
-    m_parser->addOptions({ *m_run.get(), *m_lockScreen.get(), m_tryExec, m_disableDebugView});
+    m_parser->addOptions({ *m_run.get(), *m_lockScreen.get(), m_tryExec, m_enableDebugView});
     m_parser->process(*QCoreApplication::instance());
 }
 
@@ -77,7 +76,7 @@ std::optional<QStringList> CmdLine::unescapeExecArgs(const QString &str) noexcep
 {
     auto unescapedStr = unescape(str);
     if (unescapedStr.isEmpty()) {
-        qCWarning(qLcCmdline) << "unescape Exec failed.";
+        qCWarning(treelandUtils) << "unescape Exec failed.";
         return std::nullopt;
     }
 
@@ -110,7 +109,7 @@ std::optional<QStringList> CmdLine::unescapeExecArgs(const QString &str) noexcep
         default:
             errMessage = "unknown";
         }
-        qCWarning(qLcCmdline) << "wordexp error: " << errMessage;
+        qCWarning(treelandUtils) << "wordexp error: " << errMessage;
         return std::nullopt;
     }
 
@@ -127,9 +126,9 @@ bool CmdLine::tryExec() const
     return m_parser->isSet(m_tryExec);
 }
 
-bool CmdLine::disableDebugView() const
+bool CmdLine::enableDebugView() const
 {
-    return m_parser->isSet(m_disableDebugView);
+    return m_parser->isSet(m_enableDebugView);
 }
 
 std::optional<QString> CmdLine::run() const

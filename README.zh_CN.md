@@ -10,7 +10,7 @@ treeland 是一个基于 wlroots 和 QtQuick 开发的 Wayland 合成器，旨�
 
 - [waylib](https://github.com/vioken/waylib) 整合 wlroots 和 QtQuick 的 Wayland 合成器开发库
   - Qt >= 6.8.0
-  - wlroots = 0.18
+  - wlroots = 0.19
 - [treeland-protocols](https://github.com/linuxdeepin/treeland-protocols) treeland 使用的私有 wayland 协议
 
 推荐的运行时依赖：
@@ -46,6 +46,16 @@ $ cmake --build build
 $ sudo apt build-dep . # 安装构建依赖
 $ dpkg-buildpackage -uc -us -nc -b # 构建二进制软件包
 ```
+
+## GitHub Actions / 持续集成
+
+本项目使用 GitHub Actions 进行持续集成。配置了以下工作流：
+
+- **qwlroots 构建**：当 `qwlroots/**` 文件被修改时触发
+- **waylib 构建**：当 `waylib/**` 或 `qwlroots/**` 文件被修改时触发（因为 waylib 依赖于 qwlroots）
+- **treeland 构建**：主项目构建
+
+waylib 工作流配置为在 qwlroots 代码变化时也会触发，确保 waylib 构建与 qwlroots 修改保持兼容。
 
 ## 参与贡献
 

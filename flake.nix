@@ -5,19 +5,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     nix-filter.url = "github:numtide/nix-filter";
-    qwlroots = {
-      url = "github:vioken/qwlroots";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
-      inputs.nix-filter.follows = "nix-filter";
-    };
-    waylib = {
-      url = "github:vioken/waylib";
-      inputs.qwlroots.follows = "qwlroots";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
-      inputs.nix-filter.follows = "nix-filter";
-    };
     ddm = {
       url = "github:linuxdeepin/ddm";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -32,48 +19,18 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, nix-filter, waylib, ddm, qwlroots, treeland-protocols }@input:
+  outputs = { self, nixpkgs, flake-utils, nix-filter, ddm, treeland-protocols }@input:
     flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "riscv64-linux" ]
       (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-
-          treeland = pkgs.qt6Packages.callPackage ./nix {
-            nix-filter = nix-filter.lib;
-            qwlroots = qwlroots.packages.${system}.default;
-            waylib = waylib.packages.${system}.default.override {
-                debug = false;
-            };
-            ddm = ddm.packages.${system}.default;
-            treeland-protocols = treeland-protocols.packages.${system}.default;
-          };
         in
-        {
+        rec {
           nixosConfigurations.vm = nixpkgs.lib.nixosSystem {
             inherit system;
             modules = [
               {
                 imports = [ "${nixpkgs}/nixos/modules/virtualisation/qemu-vm.nix" ];
-
-                # TODO:  allow set Environment in services.seatd
-                users.groups.seat = { };
-                systemd.services.seatd = {
-                  description = "Seat management daemon";
-                  documentation = [ "man:seatd(1)" ];
-
-                  wantedBy = [ "multi-user.target" ];
-                  restartIfChanged = false;
-
-                  serviceConfig = {
-                    Type = "notify";
-                    NotifyAccess = "all";
-                    SyslogIdentifier = "seatd";
-                    ExecStart = "${pkgs.sdnotify-wrapper}/bin/sdnotify-wrapper ${pkgs.seatd.bin}/bin/seatd -n 1 -u dde -g dde -l debug";
-                    RestartSec = 1;
-                    Restart = "always";
-                    Environment = "SEATD_VTBOUND=0";
-                  };
-                };
 
                 environment.systemPackages = with pkgs; [
                   foot
@@ -200,10 +157,16 @@
             ];
           };
 
-          packages = {
-            default = treeland;
-            qemu = self.nixosConfigurations.${system}.vm.config.system.build.vm;
-          };
+
+          packages = (import ./default.nix {
+              inherit pkgs nix-filter;
+              ddm = ddm.packages.${system}.default;
+              treeland-protocols = treeland-protocols.packages.${system}.default;
+            }) // {
+              qemu = self.nixosConfigurations.${system}.vm.config.system.build.vm;
+            };
+
+          treeland = packages.default;
 
           apps.qemu = {
             type = "app";
@@ -212,14 +175,27 @@
 
           devShells.default = pkgs.mkShell {
             packages = with pkgs; [
-              # For submodule build
-              libinput
+              # For submodule waylib and qwlroots
               wayland
-              wlroots
+              wayland-protocols
+              wlr-protocols
+              vulkan-loader
+              xorg.libXdmcp
+              xorg.xcbutilerrors
+              seatd
+              wlroots_0_19
+              mesa
+              libdrm
+              vulkan-loader
+              seatd
             ];
 
             inputsFrom = [
-              self.packages.${system}.default
+              self.packages.${system}.treeland.override {
+                  #It's submodule, prevent infinite loop calls
+                  waylib = null;
+                  qwlroot = null;
+              }
             ];
 
             shellHook =
@@ -230,8 +206,8 @@
               ''
                 #export QT_LOGGING_RULES="*.debug=true;qt.*.debug=false"
                 #export WAYLAND_DEBUG=1
-                export QT_PLUGIN_PATH=${makeQtpluginPath (with pkgs.qt6; [ qtbase qtdeclarative qtquick3d qtimageformats qtwayland qt5compat qtsvg ])}
-                export QML2_IMPORT_PATH=${makeQmlpluginPath (with pkgs; with qt6; [ qtdeclarative qtquick3d qt5compat deepin.dtk6declarative ] )}
+                export QT_PLUGIN_PATH=${makeQtpluginPath (with pkgs.qt6; [ qtbase qtdeclarative qtimageformats qtwayland qtsvg ])}
+                export QML2_IMPORT_PATH=${makeQmlpluginPath (with pkgs; with qt6; [ qtdeclarative deepin.dtk6declarative ] )}
                 export QML_IMPORT_PATH=$QML2_IMPORT_PATH
               '';
           };

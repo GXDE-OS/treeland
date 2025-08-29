@@ -200,15 +200,15 @@ private:
     uint m_currentWorkspace;
     bool m_forceSoftwareCursor;
     QString m_activeColor;
+    qreal m_windowRadius;
+    QString m_cursorThemeName;
+    QSize m_cursorSize;
     uint32_t m_windowOpacity;
     uint32_t m_windowThemeType;
     uint32_t m_windowTitlebarHeight;
-    QString m_cursorThemeName;
-    QSize m_cursorSize;
     QString m_fontName;
     QString m_monoFontName;
     uint32_t m_fontSize;
-    qreal m_windowRadius;
     QString m_iconThemeName;
     QString m_defaultBackground;
 

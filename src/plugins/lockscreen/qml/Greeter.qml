@@ -24,10 +24,18 @@ FocusScope {
     property string primaryOutputName
     visible: primaryOutputName === "" || primaryOutputName === output.name
 
-    function start()
+    function start(showAnimation)
     {
+        if (showAnimation === undefined) {
+            showAnimation = true
+        }
+        lockView.showAnimation = showAnimation
         lockView.forceActiveFocus()
-        wallpaperController.type = WallpaperController.Scale
+        if (showAnimation) {
+            wallpaperController.type = WallpaperController.Scale
+        } else {
+            wallpaperController.type = WallpaperController.ScaleWithoutAnimation
+        }
         switch (root.currentMode) {
         case Greeter.CurrentMode.Lock:
             lockView.start()
@@ -65,7 +73,7 @@ FocusScope {
         opacity: wallpaperController.type === WallpaperController.Normal ? 0 : 0.6
         Behavior on opacity {
             PropertyAnimation {
-                duration: 1000
+                duration: wallpaperController.type === WallpaperController.ScaleWithoutAnimation ? 0 : 1000
                 easing.type: Easing.OutExpo
             }
         }
@@ -93,6 +101,7 @@ FocusScope {
         anchors.fill: parent
 
         onClicked: function () {
+            wallpaperController.type = WallpaperController.Normal
             root.animationPlayed()
             root.animationPlayFinished()
         }

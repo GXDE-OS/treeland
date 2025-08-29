@@ -10,7 +10,7 @@ Core build dependencies:
 
 - [waylib](https://github.com/vioken/waylib): A Wayland compositor development library based on wlroots and QtQuick
   - Qt >= 6.8.0
-  - wlroots = 0.18
+  - wlroots = 0.19
 - [treeland-protocols](https://github.com/linuxdeepin/treeland-protocols): Private Wayland protocols used by treeland
 
 Recommended runtime dependencies:
@@ -47,6 +47,16 @@ A `debian` folder is provided to build the package under the *deepin* linux desk
 $ sudo apt build-dep . # install build dependencies
 $ dpkg-buildpackage -uc -us -nc -b # build binary package(s)
 ```
+
+## GitHub Actions / CI
+
+This project uses GitHub Actions for continuous integration. The following workflows are configured:
+
+- **qwlroots builds**: Triggered when `qwlroots/**` files are modified
+- **waylib builds**: Triggered when `waylib/**` or `qwlroots/**` files are modified (since waylib depends on qwlroots)
+- **treeland builds**: Main project builds
+
+The waylib workflows are configured to also trigger when qwlroots code changes, ensuring that waylib builds remain compatible with qwlroots modifications.
 
 ## Getting Involved
 

@@ -22,6 +22,9 @@ Control {
     height: TreelandConfig.windowTitlebarHeight
     width: surfaceItem.width
 
+    // Ensure title bar does not accept keyboard focus
+    focusPolicy: Qt.NoFocus
+
     HoverHandler {
         // block hover events to resizing mouse area, avoid cursor change
         cursorShape: Qt.ArrowCursor
@@ -66,6 +69,18 @@ Control {
         layer.enabled: !root.noRadius
         layer.smooth: !root.noRadius
         opacity: !root.noRadius ? 0 : parent.opacity
+        Text {
+            readonly property int spacenum: 4
+            anchors {
+                fill: parent
+                leftMargin: spacenum * root.height
+                rightMargin: spacenum * root.height
+            }
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            text: surface.shellSurface.title
+            elide: Text.ElideRight
+        }
 
         Row {
             anchors {
@@ -86,22 +101,10 @@ Control {
                     icon.name: "window_minimize"
                     textColor: control.textColor
                     height: root.height
+                    focusPolicy: Qt.NoFocus
 
                     onClicked: {
                         surface.requestMinimize()
-                    }
-                }
-            }
-
-            Loader {
-                objectName: "quitFullBtn"
-                visible: false
-                sourceComponent: D.WindowButton {
-                    icon.name: "window_quit_full"
-                    textColor: control.textColor
-                    height: root.height
-
-                    onClicked: {
                     }
                 }
             }
@@ -111,11 +114,13 @@ Control {
 
                 objectName: "maxOrWindedBtn"
                 sourceComponent: D.WindowButton {
-                    icon.name: surface.isMaximized ? "window_restore" : "window_maximize"
+                    icon.name: surface.shellSurface.isMaximized ? "window_restore" : "window_maximize"
                     textColor: control.textColor
                     height: root.height
+                    focusPolicy: Qt.NoFocus
 
                     onClicked: {
+                        Helper.activateSurface(surface)
                         surface.requestToggleMaximize()
                     }
                 }
@@ -135,6 +140,7 @@ Control {
                         icon.name: "window_close"
                         textColor: control.textColor
                         height: parent.height
+                        focusPolicy: Qt.NoFocus
 
                         onClicked: {
                             surface.requestClose()

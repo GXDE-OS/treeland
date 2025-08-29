@@ -7,6 +7,7 @@
 #include "core/qmlengine.h"
 #include "output/output.h"
 #include "workspace/workspace.h"
+#include "common/treelandlogging.h"
 
 #include <winputpopupsurfaceitem.h>
 #include <wlayersurface.h>
@@ -25,8 +26,6 @@
 #define OPEN_ANIMATION 1
 #define CLOSE_ANIMATION 2
 #define ALWAYSONTOPLAYER 1
-
-Q_LOGGING_CATEGORY(qLcSurfaceWrapper, "treeland.shell.surfaceWrapper")
 
 SurfaceWrapper::SurfaceWrapper(QmlEngine *qmlEngine,
                                WToplevelSurface *shellSurface,
@@ -232,6 +231,7 @@ SurfaceWrapper::~SurfaceWrapper()
     Q_ASSERT(!m_container);
     Q_ASSERT(!m_parentSurface);
     Q_ASSERT(m_subSurfaces.isEmpty());
+    disconnect(nullptr, nullptr, this, nullptr);
     if (m_titleBar) {
         delete m_titleBar;
         m_titleBar = nullptr;
@@ -247,6 +247,14 @@ SurfaceWrapper::~SurfaceWrapper()
     if (m_windowAnimation) {
         delete m_windowAnimation;
         m_windowAnimation = nullptr;
+    }
+    if (m_minimizeAnimation) {
+        delete m_minimizeAnimation;
+        m_minimizeAnimation = nullptr;
+    }
+    if (m_showDesktopAnimation) {
+        delete m_showDesktopAnimation;
+        m_showDesktopAnimation = nullptr;
     }
     if (m_coverContent) {
         delete m_coverContent;
@@ -533,12 +541,8 @@ void SurfaceWrapper::setSurfaceState(State newSurfaceState)
     QRectF targetGeometry;
 
     if (newSurfaceState == State::Maximized) {
-        if (!shellSurface()->maxSize().isEmpty())
-            return;
         targetGeometry = m_maximizedGeometry;
     } else if (newSurfaceState == State::Fullscreen) {
-        if (!shellSurface()->maxSize().isEmpty())
-            return;
         targetGeometry = m_fullscreenGeometry;
     } else if (newSurfaceState == State::Normal) {
         targetGeometry = m_normalGeometry;
@@ -550,6 +554,7 @@ void SurfaceWrapper::setSurfaceState(State newSurfaceState)
         startStateChangeAnimation(newSurfaceState, targetGeometry);
     } else {
         if (m_geometryAnimation) {
+            m_geometryAnimation->disconnect(this);
             m_geometryAnimation->deleteLater();
         }
 
@@ -619,7 +624,7 @@ void SurfaceWrapper::markWrapperToRemoved()
 
     if (!isWindowAnimationRunning()) {
         deleteLater();
-    } // else delete this in Animation finish
+    } // else delete this in Animation(for window close animation) finish
 }
 
 bool SurfaceWrapper::acceptKeyboardFocus() const
@@ -651,6 +656,7 @@ void SurfaceWrapper::setNoDecoration(bool newNoDecoration)
 
     if (m_noDecoration) {
         Q_ASSERT(m_decoration);
+        m_decoration->disconnect(this);
         m_decoration->deleteLater();
         m_decoration = nullptr;
     } else {
@@ -679,6 +685,7 @@ void SurfaceWrapper::updateTitleBar()
         return;
 
     if (m_titleBar) {
+        m_titleBar->disconnect(this);
         m_titleBar->deleteLater();
         m_titleBar = nullptr;
         m_surfaceItem->setTopPadding(0);
@@ -899,6 +906,7 @@ void SurfaceWrapper::onAnimationReady()
 
     if (!resize(m_pendingGeometry.size())) {
         // abort change state if resize failed
+        m_geometryAnimation->disconnect(this);
         m_geometryAnimation->deleteLater();
         return;
     }
@@ -911,6 +919,7 @@ void SurfaceWrapper::onAnimationFinished()
 {
     setXwaylandPositionFromSurface(true);
     Q_ASSERT(m_geometryAnimation);
+    m_geometryAnimation->disconnect(this);
     m_geometryAnimation->deleteLater();
 }
 
@@ -938,6 +947,7 @@ bool SurfaceWrapper::startStateChangeAnimation(State targetState, const QRectF &
 void SurfaceWrapper::onWindowAnimationFinished()
 {
     Q_ASSERT(m_windowAnimation);
+    m_windowAnimation->disconnect(this);
     m_windowAnimation->deleteLater();
     m_windowAnimation = nullptr;
 
@@ -971,7 +981,7 @@ void SurfaceWrapper::onMappedChanged()
 {
     if (m_wrapperAboutToRemove)
         return;
-    
+
     Q_ASSERT(surface());
     bool mapped = surface()->mapped() && !m_hideByLockScreen;
     if (!m_isProxy) {
@@ -1005,6 +1015,7 @@ void SurfaceWrapper::onSocketEnabledChanged()
 void SurfaceWrapper::onMinimizeAnimationFinished()
 {
     Q_ASSERT(m_minimizeAnimation);
+    m_minimizeAnimation->disconnect(this);
     m_minimizeAnimation->deleteLater();
 }
 
@@ -1046,6 +1057,7 @@ void SurfaceWrapper::setHideByLockScreen(bool hide)
 void SurfaceWrapper::onShowDesktopAnimationFinished()
 {
     Q_ASSERT(m_showDesktopAnimation);
+    m_showDesktopAnimation->disconnect(this);
     m_showDesktopAnimation->deleteLater();
     updateVisible();
 }
@@ -1054,6 +1066,7 @@ void SurfaceWrapper::startShowDesktopAnimation(bool show)
 {
 
     if (m_showDesktopAnimation) {
+        m_showDesktopAnimation->disconnect(this);
         m_showDesktopAnimation->deleteLater();
     }
 
@@ -1611,7 +1624,7 @@ bool SurfaceWrapper::skipDockPreView() const
 void SurfaceWrapper::setSkipDockPreView(bool skip)
 {
     if (m_type != Type::XdgToplevel && m_type != Type::XWayland) {
-        qCWarning(qLcSurfaceWrapper) << "Only xdgtoplevel and x11 surface can `setSkipDockPreView`";
+        qCWarning(treelandSurface) << "Only xdgtoplevel and x11 surface can `setSkipDockPreView`";
         return;
     }
 
@@ -1664,11 +1677,11 @@ void SurfaceWrapper::setSurfaceRole(SurfaceRole role)
     if (role != SurfaceRole::Normal) {
         setZ(ALWAYSONTOPLAYER + static_cast<int>(role));
         for (const auto &sub : std::as_const(m_subSurfaces))
-            setZ(ALWAYSONTOPLAYER + static_cast<int>(role));
+            sub->setZ(ALWAYSONTOPLAYER + static_cast<int>(role));
     } else {
         setZ(0);
         for (const auto &sub : std::as_const(m_subSurfaces))
-            setZ(0);
+            sub->setZ(0);
     }
 
     Q_EMIT surfaceRoleChanged();
