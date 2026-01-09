@@ -41,17 +41,17 @@ public:
     Workspace *workspace() const override;
     RootSurfaceContainer *rootSurfaceContainer() const override;
 
-    void blockActivateSurface(bool block) override;
-    bool isBlockActivateSurface() const override;
-
 Q_SIGNALS:
     void socketDisconnected();
+    void SessionChanged();
 
 public Q_SLOTS:
     bool ActivateWayland(QDBusUnixFileDescriptor fd);
-    QString XWaylandName();
+    void XWaylandName();
 
 private:
+    void quit();
+
     std::unique_ptr<TreelandPrivate> d_ptr;
 };
 } // namespace Treeland

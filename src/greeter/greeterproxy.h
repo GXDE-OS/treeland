@@ -46,6 +46,7 @@ class GreeterProxy : public QObject
     Q_PROPERTY(SessionModel* sessionModel READ sessionModel WRITE setSessionModel NOTIFY sessionModelChanged)
     Q_PROPERTY(UserModel* userModel READ userModel WRITE setUserModel NOTIFY userModelChanged)
     Q_PROPERTY(bool     isLocked        READ isLocked       NOTIFY isLockedChanged)
+    Q_PROPERTY(bool     isLoggedIn      READ isLoggedIn     NOTIFY isLoggedInChanged)
 
 public:
     explicit GreeterProxy(QObject *parent = nullptr);
@@ -60,6 +61,7 @@ public:
     bool canHybridSleep() const;
 
     bool isConnected() const;
+    bool isLoggedIn() const;
 
     SessionModel *sessionModel() const;
     void setSessionModel(SessionModel *model);
@@ -78,7 +80,6 @@ public Q_SLOTS:
     void init();
 
     void login(const QString &user, const QString &password, int sessionIndex);
-    void activateUser(const QString &user);
     void unlock(const QString &user, const QString &password);
     void logout();
 
@@ -87,8 +88,8 @@ private Q_SLOTS:
     void disconnected();
     void readyRead();
     void error();
-    void onSessionAdded(const QDBusObjectPath &session);
-    void onSessionRemoved(const QDBusObjectPath &session);
+    void onSessionNew(const QString &id, const QDBusObjectPath &session);
+    void onSessionRemoved(const QString &id, const QDBusObjectPath &session);
 
 Q_SIGNALS:
     void informationMessage(const QString &message);
@@ -106,12 +107,13 @@ Q_SIGNALS:
     void loginSucceeded(const QString &user);
     void switchToGreeter();
     void isLockedChanged();
+    void isLoggedInChanged();
 
 private:
     bool localValidation(const QString &user, const QString &password) const;
-    QString currentSessionPath() const;
     void updateAuthSocket();
     void updateLocketState();
+    void updateUserLoginState(const QDBusObjectPath &path, bool loggedIn);
 
 private:
     GreeterProxyPrivate *d{ nullptr };

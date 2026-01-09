@@ -12,8 +12,14 @@ SurfaceFilterProxyModel::SurfaceFilterProxyModel(QObject *parent)
 
 void SurfaceFilterProxyModel::setFilterAppId(const QString &appid)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_filterAppId = appid;
+    endFilterChange();
+#else
     m_filterAppId = appid;
     invalidateFilter();
+#endif
 }
 
 int SurfaceFilterProxyModel::activeIndex()
@@ -34,15 +40,13 @@ bool SurfaceFilterProxyModel::filterAcceptsRow(int source_row,
 {
     QModelIndex index = sourceModel()->index(source_row, 0, source_parent);
     SurfaceWrapper *surface = sourceModel()->data(index).value<SurfaceWrapper *>();
-    auto wsurface = surface->shellSurface();
-    Q_ASSERT(wsurface);
 
     if (m_filterAppId.isEmpty()) {
         return true;
     }
 
     if (surface) {
-        return wsurface->appId() == m_filterAppId;
+        return surface->appId() == m_filterAppId;
     }
 
     return false;

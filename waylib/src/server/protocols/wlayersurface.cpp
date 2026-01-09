@@ -24,7 +24,7 @@ public:
 
     WWRAP_HANDLE_FUNCTIONS(qw_layer_surface_v1, wlr_layer_surface_v1)
 
-    wl_client *waylandClient() const {
+    wl_client *waylandClient() const override {
         return nativeHandle()->resource->client;
     }
 
@@ -34,7 +34,7 @@ public:
 
     void init();
     void connect();
-    void instantRelease();
+    void instantRelease() override;
 
     bool setDesiredSize(QSize newSize);
     bool setLayer(WLayerSurface::LayerType layer);
@@ -108,7 +108,7 @@ void WLayerSurfacePrivate::connect()
     });
 }
 
-static inline void debugOutput(wlr_layer_surface_v1_state s)
+[[maybe_unused]] static inline void debugOutput(wlr_layer_surface_v1_state s)
 {
     qDebug() << "committed: " << s.committed << " "
              << "configure_serial: " << s.configure_serial << "\n"
@@ -331,9 +331,19 @@ int WLayerSurface::keyboardFocusPriority() const
     return 0;
 }
 
+bool WLayerSurface::isInitialized() const
+{
+    return handle()->handle()->initialized;
+}
+
 void WLayerSurface::resize(const QSize &size)
 {
     configureSize(size);
+}
+
+void WLayerSurface::close()
+{
+    closed();
 }
 
 QSize WLayerSurface::desiredSize() const
@@ -432,8 +442,6 @@ void WLayerSurface::closed()
 
 bool WLayerSurface::checkNewSize(const QSize &size,  QSize *clipedSize)
 {
-    W_D(WLayerSurface);
-
     // If the width or height arguments are zero, it means the client should decide its own window dimension.
     if (size.width() < 0 || size.height() < 0) {
         if (clipedSize)

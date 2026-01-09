@@ -13,7 +13,9 @@
 #include <QDBusServiceWatcher>
 #include <QDBusUnixFileDescriptor>
 #include <QDebug>
+#include <QDir>
 #include <QFile>
+#include <QTemporaryFile>
 #include <QtEnvironmentVariables>
 
 #include <sys/socket.h>
@@ -22,6 +24,21 @@
 
 typedef QMap<QString, QString> StringMap;
 Q_DECLARE_METATYPE(StringMap)
+
+class SignalReceiver : public QObject
+{
+    Q_OBJECT
+public:
+    SignalReceiver(std::function<void()> activateFdFunc, QObject *parent = nullptr)
+        : QObject(parent), activateFd(activateFdFunc) {
+    }
+public Q_SLOTS:
+    void onSessionChanged() {
+        activateFd();
+    }
+private:
+    std::function<void()> activateFd;
+};
 
 int main(int argc, char *argv[])
 {
@@ -49,10 +66,11 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    QList<QTemporaryFile *> tmpFiles;
     QDBusUnixFileDescriptor unixFileDescriptor(SD_LISTEN_FDS_START);
 
-    auto active = [unixFileDescriptor, type](const QDBusConnection &connection) {
-        auto activateFd = [unixFileDescriptor, type, connection] {
+    auto active = [unixFileDescriptor, type, &tmpFiles](QDBusConnection connection) {
+        auto activateFd = [unixFileDescriptor, type, &connection, &tmpFiles] {
             QDBusInterface updateFd("org.deepin.Compositor1",
                                     "/org/deepin/Compositor1",
                                     "org.deepin.Compositor1",
@@ -84,9 +102,31 @@ int main(int argc, char *argv[])
 
                     sd_notify(0, "READY=1");
                 } else if (type == "xwayland") {
-                    QDBusReply<QString> reply = updateFd.call("XWaylandName");
-                    if (reply.isValid()) {
-                        const QString &xwaylandName = reply.value();
+                    QDBusMessage reply = updateFd.call("XWaylandName");
+                    if (reply.type() == QDBusMessage::ReplyMessage) {
+                        QVariantList values = reply.arguments();
+                        if (values.size() < 2) {
+                            qWarning() << "Invalid XWaylandName reply";
+                            return;
+                        }
+                        QString xwaylandName = values.at(0).toString();
+                        QByteArray auth = values.at(1).toByteArray();
+
+                        QByteArray runtimeDir = qgetenv("XDG_RUNTIME_DIR");
+                        if (runtimeDir.isEmpty())
+                            runtimeDir = QDir::tempPath().toLocal8Bit();
+                        QTemporaryFile *authFile = new QTemporaryFile();
+                        authFile->setFileTemplate(QStringLiteral("%1/.xauth_XXXXXX").arg(runtimeDir));
+                        if (!authFile->open()) {
+                            qWarning() << "Failed to create temporary xauth file";
+                            return;
+                        }
+                        QString authFileName = authFile->fileName();
+                        tmpFiles.append(authFile);
+                        authFile->setPermissions(QFile::ReadOwner | QFile::WriteOwner);
+                        authFile->write(auth);
+                        authFile->flush();
+                        authFile->close();
 
                         QDBusInterface dbus("org.freedesktop.DBus",
                                             "/org/freedesktop/DBus",
@@ -94,6 +134,7 @@ int main(int argc, char *argv[])
                                             QDBusConnection::sessionBus());
                         StringMap env;
                         env["DISPLAY"] = xwaylandName;
+                        env["XAUTHORITY"] = authFileName;
                         auto reply =
                             dbus.call("UpdateActivationEnvironment", QVariant::fromValue(env));
 
@@ -103,21 +144,22 @@ int main(int argc, char *argv[])
             }
         };
 
-        QDBusServiceWatcher *compositorWatcher =
-            new QDBusServiceWatcher("org.deepin.Compositor1",
-                                    connection,
-                                    QDBusServiceWatcher::WatchForRegistration);
-
-        QObject::connect(compositorWatcher,
-                         &QDBusServiceWatcher::serviceRegistered,
-                         compositorWatcher,
-                         activateFd);
-
+        connection.connect("org.deepin.Compositor1",
+                           "/org/deepin/Compositor1",
+                           "org.deepin.Compositor1",
+                           "SessionChanged",
+                           new SignalReceiver(activateFd),
+                           SLOT(onSessionChanged()));
         activateFd();
     };
 
     active(QDBusConnection::sessionBus());
     active(QDBusConnection::systemBus());
 
-    return app.exec();
+    int ret = app.exec();
+    for (auto i : tmpFiles)
+        delete i;
+    return ret;
 }
+
+#include "systemd-socket.moc"

@@ -41,6 +41,9 @@ QmlEngine::QmlEngine(QObject *parent)
     , launchpadAnimationComponent(this, "Treeland", "LaunchpadAnimation")
     , launchpadCoverComponent(this, "Treeland", "LaunchpadCover")
     , layershellAnimationComponent(this, "Treeland", "LayerShellAnimation")
+    , lockScreenFallbackComponent(this, "Treeland", "LockScreenFallback")
+    , fpsDisplayComponent(this, "Treeland", "FpsDisplay")
+    , prelaunchSplashComponent(this, "Treeland", "PrelaunchSplash")
 {
 }
 
@@ -191,7 +194,7 @@ QQuickItem *QmlEngine::createDockPreview(QQuickItem *parent)
     return createComponent(dockPreviewComponent, parent);
 }
 
-QQuickItem *QmlEngine::createLockScreen(Output *output, QQuickItem *parent)
+QQuickItem *QmlEngine::createLockScreen([[maybe_unused]] Output *output, [[maybe_unused]] QQuickItem *parent)
 {
 #ifndef DISABLE_DDM
     return createComponent(lockScreenComponent,
@@ -241,4 +244,22 @@ QQuickItem *QmlEngine::createCaptureSelector(QQuickItem *parent, CaptureManagerV
 QQuickItem *QmlEngine::createWindowPicker(QQuickItem *parent)
 {
     return createComponent(windowPickerComponent, parent);
+}
+
+QQuickItem *QmlEngine::createLockScreenFallback(QQuickItem *parent, const QVariantMap &properties)
+{
+    return createComponent(lockScreenFallbackComponent, parent, properties);
+}
+
+QQuickItem *QmlEngine::createFpsDisplay(QQuickItem *parent)
+{
+    return createComponent(fpsDisplayComponent, parent);
+}
+
+QQuickItem *QmlEngine::createPrelaunchSplash(QQuickItem *parent, qreal initialRadius, QW_NAMESPACE::qw_buffer *iconBuffer)
+{
+    return createComponent(prelaunchSplashComponent, parent, {
+         { "initialRadius", QVariant::fromValue(initialRadius) },
+         { "iconBuffer", QVariant::fromValue(iconBuffer) },
+    });
 }

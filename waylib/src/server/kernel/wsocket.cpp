@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <signal.h>
+#include <errno.h>
 
 struct wl_event_source;
 
@@ -107,7 +108,17 @@ static int wl_os_socket_cloexec(int domain, int type, int protocol)
 
 static int wl_os_accept_cloexec(int sockfd, sockaddr *addr, socklen_t *addrlen)
 {
-    int fd = accept(sockfd, addr, addrlen);
+    int fd;
+
+    // First try accept4, preferred on modern Linux systems
+    fd = accept4(sockfd, addr, addrlen, SOCK_CLOEXEC);
+    if (fd >= 0)
+        return fd;
+    if (errno != ENOSYS)
+        return -1;
+
+    // Fallback to traditional approach if accept4 is not supported
+    fd = accept(sockfd, addr, addrlen);
     return set_cloexec_or_close(fd);
 }
 // Copy end
@@ -115,9 +126,15 @@ static int wl_os_accept_cloexec(int sockfd, sockaddr *addr, socklen_t *addrlen)
 class Q_DECL_HIDDEN WSocketPrivate : public WObjectPrivate
 {
 public:
-    WSocketPrivate(WSocket *qq, bool freeze, WSocket *parent)
+    WSocketPrivate(WSocket *qq, bool freeze)
         : WObjectPrivate(qq)
         , freezeClientWhenDisable(freeze)
+        , parentSocket(nullptr)
+    {}
+
+    WSocketPrivate(WSocket *qq, WSocket *parent)
+        : WObjectPrivate(qq)
+        , freezeClientWhenDisable(WSocketPrivate::get(parent)->freezeClientWhenDisable)
         , parentSocket(parent)
     {}
 
@@ -139,6 +156,13 @@ public:
     bool ownsFd = true;
     QString socket_file;
     QPointer<WSocket> parentSocket;
+
+    // for wp_security_context_v1
+    // This WSocket object living is managed by WSecurityContextManager
+    // So using the QByteArrayView ref the source data to avoid the deep copy
+    QByteArrayView sandboxEngine;
+    QByteArrayView appId;
+    QByteArrayView instanceId;
 
     wl_display *display = nullptr;
     wl_event_source *eventSource = nullptr;
@@ -227,10 +251,11 @@ void WSocketPrivate::addClient(WClient *client)
 class Q_DECL_HIDDEN WClientPrivate : public WObjectPrivate
 {
 public:
-    WClientPrivate(wl_client *handle, WSocket *socket, WClient *qq)
+    WClientPrivate(wl_client *handle, WSocket *socket, WClient *qq, bool isWlClientOwned)
         : WObjectPrivate(qq)
         , handle(handle)
         , socket(socket)
+        , isWlClientOwned(isWlClientOwned)
     {
         auto listener = new WlClientDestroyListener(qq);
         wl_client_add_destroy_listener(handle, &listener->destroy);
@@ -253,12 +278,13 @@ public:
     WSocket *socket = nullptr;
     mutable QSharedPointer<WClient::Credentials> credentials;
     mutable int pidFD = -1;
+    bool isWlClientOwned = true;
 };
 
 void WlClientDestroyListener::handle_destroy(wl_listener *listener, void *data)
 {
     WlClientDestroyListener *self = wl_container_of(listener, self, destroy);
-    if (self->client) {
+    if (self->client && self->client->handle()) {
         Q_ASSERT(reinterpret_cast<wl_client*>(data) == self->client->handle());
         self->client->d_func()->handle = nullptr;
         auto socket = self->client->socket();
@@ -270,9 +296,9 @@ void WlClientDestroyListener::handle_destroy(wl_listener *listener, void *data)
     delete self;
 }
 
-WClient::WClient(wl_client *client, WSocket *socket)
+WClient::WClient(wl_client *client, WSocket *socket, bool isWlClientOwned)
     : QObject(nullptr)
-    , WObject(*new WClientPrivate(client, socket, this))
+    , WObject(*new WClientPrivate(client, socket, this, isWlClientOwned))
 {
 
 }
@@ -329,6 +355,24 @@ WClient *WClient::get(const wl_client *client)
     return nullptr;
 }
 
+QByteArray WClient::sandboxEngine() const
+{
+    W_DC(WClient);
+    return WSocketPrivate::get(d->socket)->sandboxEngine.toByteArray();
+}
+
+QByteArray WClient::appId() const
+{
+    W_DC(WClient);
+    return WSocketPrivate::get(d->socket)->appId.toByteArray();
+}
+
+QByteArray WClient::instanceId() const
+{
+    W_DC(WClient);
+    return WSocketPrivate::get(d->socket)->instanceId.toByteArray();
+}
+
 void WClient::freeze()
 {
     W_D(WClient);
@@ -341,11 +385,30 @@ void WClient::activate()
     pauseClient(d->handle, false);
 }
 
-WSocket::WSocket(bool freezeClientWhenDisable, WSocket *parentSocket, QObject *parent)
+WSocket::WSocket(bool freezeClientWhenDisable, QObject *parent)
     : QObject(parent)
-    , WObject(*new WSocketPrivate(this, freezeClientWhenDisable, parentSocket))
+    , WObject(*new WSocketPrivate(this, freezeClientWhenDisable))
 {
 
+}
+
+WSocket::WSocket(WSocket *parentSocket, QObject *parent)
+    : QObject(parent)
+    , WObject(*new WSocketPrivate(this, parentSocket))
+{
+
+}
+
+WSocket::WSocket(const char *sandboxEngine,
+                 const char *appId,
+                 const char *instanceId,
+                 WSocket *parentSocket, QObject *parent)
+    : WSocket(parentSocket, parent)
+{
+    W_D(WSocket);
+    d->sandboxEngine = sandboxEngine;
+    d->appId = appId;
+    d->instanceId = instanceId;
 }
 
 WSocket::~WSocket()
@@ -406,7 +469,7 @@ void WSocket::close()
 
     if (!d->clients.isEmpty()) {
         for (auto client : std::as_const(d->clients))
-            delete client;
+            removeClient(client);
 
         d->clients.clear();
         Q_EMIT clientsChanged();
@@ -456,7 +519,7 @@ bool WSocket::create(const QString &filePath)
     if (isValid())
         return false;
 
-    d->fd = wl_os_socket_cloexec(PF_LOCAL, SOCK_STREAM, 0);
+    d->fd = wl_os_socket_cloexec(PF_LOCAL, SOCK_STREAM | SOCK_NONBLOCK, 0);
     if (d->fd < 0)
         return false;
 
@@ -659,7 +722,7 @@ WClient *WSocket::addClient(int fd)
     return wclient;
 }
 
-WClient *WSocket::addClient(wl_client *client)
+WClient *WSocket::addClient(wl_client *client, bool isWlClientOwned)
 {
     W_D(WSocket);
 
@@ -670,7 +733,7 @@ WClient *WSocket::addClient(wl_client *client)
         if (d->clients.contains(wclient))
             return wclient;
     } else {
-        wclient = new WClient(client, this);
+        wclient = new WClient(client, this, isWlClientOwned);
     }
 
     d->addClient(wclient);
@@ -679,8 +742,6 @@ WClient *WSocket::addClient(wl_client *client)
 
 bool WSocket::removeClient(wl_client *client)
 {
-    W_D(WSocket);
-
     if (auto c = WClient::get(client))
         return removeClient(c);
     return false;
@@ -695,6 +756,14 @@ bool WSocket::removeClient(WClient *client)
         return false;
 
     Q_EMIT aboutToBeDestroyedClient(client);
+
+    auto handle = client->handle();
+    if (handle && client->d_func()->isWlClientOwned) {
+        // Set handle to nullptr to prevent handle_destroy from calling removeClient again
+        client->d_func()->handle = nullptr;
+        wl_client_destroy(handle);
+    }
+
     delete client;
     Q_EMIT clientsChanged();
 

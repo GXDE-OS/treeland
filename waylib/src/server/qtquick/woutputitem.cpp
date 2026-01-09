@@ -154,7 +154,7 @@ void WOutputItemPrivate::updateCursors()
         tmpCursors.append(std::make_pair(cursor, oc));
     }
 
-    std::swap(tmpCursors, cursors);
+    tmpCursors.swap(cursors);
     // clean needless cursors
     for (auto i : std::as_const(tmpCursors)) {
         if (cursors.contains(i))
@@ -338,8 +338,6 @@ QList<QQuickItem *> WOutputItem::cursorItems() const
 
 void WOutputItem::classBegin()
 {
-    W_D(WOutputItem);
-
     QQuickItem::classBegin();
 }
 
@@ -356,8 +354,6 @@ void WOutputItem::componentComplete()
 
 void WOutputItem::releaseResources()
 {
-    W_D(WOutputItem);
-
     WQuickObserver::releaseResources();
 }
 

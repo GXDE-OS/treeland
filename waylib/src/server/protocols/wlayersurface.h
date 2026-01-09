@@ -81,7 +81,9 @@ public:
 
     QRect getContentGeometry() const override;
     int keyboardFocusPriority() const override;
+    bool isInitialized() const override;
     void resize(const QSize &size) override;
+    void close() override;
 
     // layer shell info
     QSize desiredSize() const;

@@ -3,8 +3,7 @@
 
 #include "treeland.h"
 
-#include "compositor1adaptor.h"
-#include "config/treelandconfig.h"
+#include "treelandconfig.hpp"
 #include "core/qmlengine.h"
 #include "greeter/usermodel.h"
 #include "interfaces/multitaskviewinterface.h"
@@ -12,12 +11,15 @@
 #include "seat/helper.h"
 #include "utils/cmdline.h"
 #include "common/treelandlogging.h"
+#include "common/constants.h"
 
 #include <qqml.h>
 
-#ifndef DISABLE_DDM
-#  include "interfaces/lockscreeninterface.h"
+#if !defined(DISABLE_DDM) || defined(EXT_SESSION_LOCK_V1)
+#include "interfaces/lockscreeninterface.h"
+#endif
 
+#ifndef DISABLE_DDM
 #  include <Constants.h>
 #  include <Messages.h>
 #  include <SignalHandler.h>
@@ -32,6 +34,10 @@ using namespace DDM;
 #include <wxwayland.h>
 
 #include <QCoreApplication>
+#include <QDBusAbstractAdaptor>
+#include <QDBusConnection>
+#include <QDBusConnectionInterface>
+#include <QDBusMessage>
 #include <QDebug>
 #include <QLocalSocket>
 #include <QLoggingCategory>
@@ -69,10 +75,17 @@ public:
              QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation)) {
             qmlEngine->addImportPath(item + "/treeland/qml");
         }
-        QObject::connect(qmlEngine, &QQmlEngine::quit, qApp, &QCoreApplication::quit);
 
+        W_Q(Treeland);
+        // Use QueuedConnection to avoid
+        // assert(wlroots: assert(wl_list_empty(&cur->events.button.listener_list)))
+        // failed during quit(If the quit call is from the cursor's button press/release event)
+        connect(qmlEngine, &QQmlEngine::quit, q, &Treeland::quit, Qt::QueuedConnection);
         helper = qmlEngine->singletonInstance<Helper *>("Treeland", "Helper");
-        helper->init();
+        connect(helper, &Helper::requestQuit, q, &Treeland::quit, Qt::QueuedConnection);
+
+        qputenv("WLR_XWAYLAND", QByteArray(LIBEXEC_DIR) + "/treeland-xwayland");
+        helper->init(q);
 
 #ifndef DISABLE_DDM
         auto userModel = qmlEngine->singletonInstance<UserModel *>("Treeland", "UserModel");
@@ -225,7 +238,7 @@ public:
                 helper->setMultitaskViewImpl(multitaskview);
             }
 
-#ifndef DISABLE_DDM
+#if !defined(DISABLE_DDM) || defined(EXT_SESSION_LOCK_V1)
             if (auto *lockscreen = qobject_cast<ILockScreen *>(pluginInstance)) {
                 qCDebug(treelandPlugin) << "Get LockScreen Instance.";
                 connect(pluginInstance, &QObject::destroyed, this, [this] {
@@ -253,6 +266,50 @@ private:
     std::map<PluginInterface *, QTranslator *> pluginTs;
 };
 
+
+class Compositor1Adaptor: public QDBusAbstractAdaptor
+{
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.deepin.Compositor1")
+    Q_CLASSINFO("D-Bus Introspection",
+                "  <interface name=\"org.deepin.Compositor1\">\n"
+                "    <method name=\"ActivateWayland\">\n"
+                "      <arg direction=\"in\" type=\"h\" name=\"fd\"/>\n"
+                "      <arg direction=\"out\" type=\"b\" name=\"result\"/>\n"
+                "    </method>\n"
+                "    <method name=\"XWaylandName\">\n"
+                "      <arg direction=\"out\" type=\"s\" name=\"result\"/>\n"
+                "      <arg direction=\"out\" type=\"ay\" name=\"auth\"/>\n"
+                "    </method>\n"
+                "    <signal name=\"SessionChanged\"/>\n"
+                "  </interface>\n"
+                "")
+public:
+    Compositor1Adaptor(Treeland *parent)
+    : QDBusAbstractAdaptor(parent)
+    {
+        setAutoRelaySignals(true);
+    }
+
+    inline Treeland *parent() const
+    { return static_cast<Treeland *>(QObject::parent()); }
+
+public Q_SLOTS: // METHODS
+
+    bool ActivateWayland(const QDBusUnixFileDescriptor &fd)
+    {
+        return parent()->ActivateWayland(fd);
+    }
+
+    void XWaylandName()
+    {
+        parent()->XWaylandName();
+    }
+    
+Q_SIGNALS: // SIGNALS
+    void SessionChanged();
+};
+
 Treeland::Treeland()
     : QObject()
     , d_ptr(std::make_unique<TreelandPrivate>(this))
@@ -260,23 +317,22 @@ Treeland::Treeland()
     Q_D(Treeland);
 
     qmlRegisterModule("Treeland.Protocols", 1, 0);
-    qmlRegisterSingletonInstance("Treeland",
-                                 1,
-                                 0,
-                                 "TreelandConfig",
-                                 &TreelandConfig::ref()); // Inject treeland config singleton.
 
     d->init();
 
     if (CmdLine::ref().run().has_value()) {
-        auto exec = [runCmd = CmdLine::ref().run().value(), this, d] {
+        auto exec = [runCmd = CmdLine::ref().run().value(), d] {
             qCInfo(treelandDBus) << "run cmd:" << runCmd;
             if (auto cmdline = CmdLine::ref().unescapeExecArgs(runCmd); cmdline) {
                 auto cmdArgs = cmdline.value();
 
                 auto envs = QProcessEnvironment::systemEnvironment();
-                envs.insert("WAYLAND_DISPLAY", d->helper->defaultWaylandSocket()->fullServerName());
-                envs.insert("DISPLAY", d->helper->defaultXWaylandSocket()->displayName());
+                envs.insert("WAYLAND_DISPLAY", d->helper->globalWaylandSocket()->fullServerName());
+                if (auto *xwayland = d->helper->xwaylandForUid(getuid())) {
+                    envs.insert("DISPLAY", xwayland->displayName());
+                } else if (auto *current = d->helper->globalXWayland()) {
+                    envs.insert("DISPLAY", current->displayName());
+                }
                 envs.insert("XDG_SESSION_DESKTOP", "Treeland");
 
                 QProcess process;
@@ -292,7 +348,7 @@ Treeland::Treeland()
         auto con =
             connect(d->helper, &Helper::socketFileChanged, this, exec, Qt::SingleShotConnection);
 
-        WSocket *defaultSocket = d->helper->defaultWaylandSocket();
+        WSocket *defaultSocket = d->helper->globalWaylandSocket();
         if (defaultSocket && defaultSocket->isValid()) {
             QObject::disconnect(con);
             exec();
@@ -324,7 +380,7 @@ Treeland::Treeland()
 
 Treeland::~Treeland()
 {
-    Q_D(Treeland);
+
 }
 
 bool Treeland::debugMode() const
@@ -357,16 +413,6 @@ RootSurfaceContainer *Treeland::rootSurfaceContainer() const
     return d->helper->rootSurfaceContainer();
 }
 
-void Treeland::blockActivateSurface(bool block)
-{
-    TreelandConfig::ref().setBlockActivateSurface(block);
-}
-
-bool Treeland::isBlockActivateSurface() const
-{
-    return TreelandConfig::ref().blockActivateSurface();
-}
-
 bool Treeland::ActivateWayland(QDBusUnixFileDescriptor _fd)
 {
     Q_D(Treeland);
@@ -383,7 +429,11 @@ bool Treeland::ActivateWayland(QDBusUnixFileDescriptor _fd)
     pw = getpwuid(uid);
     QString user{ pw->pw_name };
 
-    auto socket = std::make_shared<WSocket>(true);
+    WSocket *sessionSocket = d->helper->waylandSocketForUid(uid);
+    if (!sessionSocket)
+        return false;
+    std::shared_ptr<WSocket> socket = std::make_shared<WSocket>(sessionSocket);
+
     socket->create(fd->fileDescriptor(), false);
 
     auto userModel =
@@ -409,56 +459,46 @@ bool Treeland::ActivateWayland(QDBusUnixFileDescriptor _fd)
     return true;
 }
 
-QString Treeland::XWaylandName()
+void Treeland::XWaylandName()
 {
     Q_D(Treeland);
 
     setDelayedReply(true);
+
+    auto m = message();
+    auto conn = connection();
 
     auto uid = connection().interface()->serviceUid(message().service());
     struct passwd *pw;
     pw = getpwuid(uid);
     QString user{ pw->pw_name };
 
-    auto *xwayland = d->helper->defaultXWaylandSocket();
+    auto *xwayland = d->helper->xwaylandForUid(uid);
+    if (!xwayland) {
+        auto reply = m.createErrorReply(QDBusError::InternalError,
+                                        "Failed to prepare XWayland session");
+        conn.send(reply);
+        return;
+    }
     const QString &display = xwayland->displayName();
 
-    auto m = message();
-    auto conn = connection();
+    QFile authFile(QStringLiteral("/tmp/.xauth_%1").arg(display));
+    if (!authFile.open(QIODevice::ReadOnly)) {
+        conn.send(m.createErrorReply(QDBusError::InternalError, "Failed to open xauth file"));
+        return;
+    }
 
-    QProcess *process = new QProcess(this);
-    connect(process, &QProcess::finished, [process, m, conn, user, display] {
-        if (process->exitCode() != 0) {
-            qCWarning(treelandDBus) << "xhost command failed with exit code" << process->exitCode()
-                               << process->readAllStandardOutput()
-                               << process->readAllStandardError();
-            auto reply =
-                m.createErrorReply(QDBusError::InternalError, "Failed to set xhost permissions");
-            conn.send(reply);
-        } else {
-            qCDebug(treelandDBus) << process->exitCode() << " " << process->readAllStandardOutput()
-                             << process->readAllStandardError();
-            qCDebug(treelandDBus) << QString("user %1 got xwayland display %2.").arg(user).arg(display);
-            auto reply = m.createReply(display);
-            conn.send(reply);
-        }
-        process->deleteLater();
-    });
+    QVariantList result;
+    result << QVariant(display) << QVariant(authFile.readAll());
+    conn.send(m.createReply(result));
+    return;
+}
 
-    connect(process, &QProcess::errorOccurred, [this, m, conn] {
-        auto reply =
-            m.createErrorReply(QDBusError::InternalError, "Failed to set xhost permissions");
-        conn.send(reply);
-    });
-
-    auto env = QProcessEnvironment::systemEnvironment();
-    env.insert("DISPLAY", display);
-    process->setProcessEnvironment(env);
-    process->setProgram("xhost");
-    process->setArguments({ QString("+si:localuser:%1").arg(user) });
-    process->start();
-
-    return {};
+void Treeland::quit()
+{
+    // make sure all deleted before app exit
+    d_ptr.reset();
+    qApp->quit();
 }
 
 } // namespace Treeland

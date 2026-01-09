@@ -5,6 +5,7 @@
 
 #include "qmlengine.h"
 #include "workspace.h"
+#include "wsessionlock.h"
 
 #include <wglobal.h>
 #include <wqmlcreator.h>
@@ -119,6 +120,7 @@ Q_SIGNALS:
 
     void animationSpeedChanged();
     void outputModeChanged();
+    void requestQuit();
 
 private:
     void allowNonDrmOutputAutoChangeMode(WOutput *output);
@@ -176,10 +178,13 @@ private:
     LayerSurfaceContainer *m_topContainer = nullptr;
     LayerSurfaceContainer *m_overlayContainer = nullptr;
     SurfaceContainer *m_popupContainer = nullptr;
+    SurfaceContainer *m_lockContainer = nullptr;
     int m_currentUserId = -1;
     float m_animationSpeed = 1.0;
     OutputMode m_mode = OutputMode::Extension;
     std::optional<QPointF> m_fakelastPressedPosition;
+
+    WSessionLock *m_sessionLock = nullptr;
 };
 
 Q_DECLARE_OPAQUE_POINTER(RootSurfaceContainer*)

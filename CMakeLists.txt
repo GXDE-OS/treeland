@@ -7,6 +7,7 @@ project(Treeland
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_C_STANDARD 23) # Unnamed parameters in function definition is a C23 extension feature.
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Standard installation paths
@@ -29,6 +30,18 @@ option(DISABLE_DDM "Disable DDM and greeter" OFF)
 
 if (DISABLE_DDM)
     add_compile_definitions("DISABLE_DDM")
+endif()
+
+# Alternative lock mechanism: Wayland ext-session-lock
+option(EXT_SESSION_LOCK_V1 "Enable Wayland ext-session-lock support (alternative to DDM)" ON)
+add_feature_info(ext_session_lock_v1 EXT_SESSION_LOCK_V1 "Enable ext-session-lock-v1 protocol support in Treeland")
+
+if (EXT_SESSION_LOCK_V1)
+    add_compile_definitions("EXT_SESSION_LOCK_V1")
+endif()
+# Heads-up if both are enabled: ext-session-lock is intended as an alternative to DDM
+if (NOT EXT_SESSION_LOCK_V1 AND DISABLE_DDM)
+    message(WARNING "no ext-session-lock support and no DDM, treeland will not have session locking ability.")
 endif()
 
 if (ADDRESS_SANITIZER)
@@ -100,6 +113,7 @@ set(PROJECT_RESOURCES_DIR "${CMAKE_SOURCE_DIR}/misc")
 enable_testing(true)
 
 add_subdirectory(src)
+add_subdirectory(tools)
 add_subdirectory(misc)
 add_subdirectory(tests)
 

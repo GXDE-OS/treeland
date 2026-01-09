@@ -208,7 +208,19 @@ public:
     }
     inline void doSetKeyboardFocus(qw_surface *surface) {
         if (surface) {
-            handle()->keyboard_enter(*surface, nullptr, 0, nullptr);
+            const wlr_keyboard_modifiers *modifiers = nullptr;
+            auto keyboard = q_func()->keyboard();
+            if (keyboard) {
+                auto *wlr_keyboard = wlr_keyboard_from_input_device(*keyboard->handle());
+                if (wlr_keyboard) {
+                    modifiers = &wlr_keyboard->modifiers;
+                }
+            }
+
+            // Send keyboard enter with current modifiers.
+            // This ensures the newly focused client receives the current modifier state
+            // (Num Lock, Caps Lock, etc.) as required by Wayland protocol.
+            handle()->keyboard_enter(*surface, nullptr, 0, modifiers);
         } else {
             handle()->keyboard_clear_focus();
         }
@@ -775,7 +787,7 @@ WGlobal::CursorShape WSeat::requestedCursorShape() const
     W_DC(WSeat);
 
     if (d->cursorClient != d->nativeHandle()->pointer_state.focused_client) {
-        qWarning("Focused client never set cursor shape nor surface, will fallback to `Default`");
+        qCWarning(waylibSeat, "Focused client never set cursor shape nor surface, will fallback to `Default`");
         return WGlobal::CursorShape::Default;
     }
 
@@ -838,7 +850,7 @@ void WSeat::detachInputDevice(WInputDevice *device)
         d->updateCapabilities();
 }
 
-inline static WSeat *getSeat(QInputEvent *event)
+[[maybe_unused]] inline static WSeat *getSeat(QInputEvent *event)
 {
     auto inputDevice = WInputDevice::from(event->device());
     if (Q_UNLIKELY(!inputDevice))
@@ -954,9 +966,9 @@ bool WSeat::sendEvent(WSurface *target, QObject *shellObject, QObject *eventObje
         switch (e->gestureType()) {
             case Qt::NativeGestureType::BeginNativeGesture:
                 if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::SwipeGesture)
-                d->gesture->send_swipe_begin(d->nativeHandle(), e->timestamp(), e->fingerCount());
+                    d->gesture->send_swipe_begin(d->nativeHandle(), e->timestamp(), e->fingerCount());
                 if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::PinchGesture)
-                d->gesture->send_pinch_begin(d->nativeHandle(), e->timestamp(), e->fingerCount());
+                    d->gesture->send_pinch_begin(d->nativeHandle(), e->timestamp(), e->fingerCount());
                 if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::HoldGesture)
                     d->gesture->send_hold_begin(d->nativeHandle(), e->timestamp(), e->fingerCount());
                 break;
@@ -1316,7 +1328,6 @@ void WSeat::notifyHoldEnd(WCursor *cursor, WInputDevice *device, uint32_t time_m
 
 void WSeat::notifyTouchDown(WCursor *cursor, WInputDevice *device, int32_t touch_id, [[maybe_unused]] uint32_t time_msec)
 {
-    W_D(WSeat);
     auto qwDevice = qobject_cast<QPointingDevice*>(device->qtDevice());
     Q_ASSERT(qwDevice);
     const QPointF &globalPos = cursor->position();
@@ -1354,8 +1365,6 @@ void WSeat::notifyTouchDown(WCursor *cursor, WInputDevice *device, int32_t touch
 
 void WSeat::notifyTouchMotion(WCursor *cursor, WInputDevice *device, int32_t touch_id, [[maybe_unused]] uint32_t time_msec)
 {
-
-    W_DC(WSeat);
     auto qwDevice = qobject_cast<QPointingDevice*>(device->qtDevice());
     Q_ASSERT(qwDevice);
 
@@ -1384,7 +1393,6 @@ void WSeat::notifyTouchMotion(WCursor *cursor, WInputDevice *device, int32_t tou
 
 void WSeat::notifyTouchUp(WCursor *cursor, WInputDevice *device, int32_t touch_id, [[maybe_unused]] uint32_t time_msec)
 {
-    W_DC(WSeat);
     auto qwDevice = qobject_cast<QPointingDevice*>(device->qtDevice());
     Q_ASSERT(qwDevice);
 

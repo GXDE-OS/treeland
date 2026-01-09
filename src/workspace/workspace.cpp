@@ -3,19 +3,18 @@
 
 #include "workspace.h"
 
-#include "config/treelandconfig.h"
+#include "common/treelandlogging.h"
 #include "core/rootsurfacecontainer.h"
 #include "output/output.h"
 #include "seat/helper.h"
 #include "surface/surfacecontainer.h"
 #include "surface/surfacewrapper.h"
 #include "workspaceanimationcontroller.h"
-#include "common/treelandlogging.h"
-
+#include "treelanduserconfig.hpp"
 
 Workspace::Workspace(SurfaceContainer *parent)
     : SurfaceContainer(parent)
-    , m_currentIndex(TreelandConfig::ref().currentWorkspace())
+    , m_currentIndex(Helper::instance()->config()->currentWorkspace())
     , m_models(new WorkspaceListModel(this))
     , m_currentFilter(new SurfaceFilterProxyModel(this))
     , m_animationController(new WorkspaceAnimationController(this))
@@ -23,9 +22,9 @@ Workspace::Workspace(SurfaceContainer *parent)
     m_showOnAllWorkspaceModel = new WorkspaceModel(this, ShowOnAllWorkspaceId, {});
     m_showOnAllWorkspaceModel->setName("show-on-all-workspace");
     m_showOnAllWorkspaceModel->setVisible(true);
-    for (uint index = 0; index < TreelandConfig::ref().numWorkspace(); index++) {
+    for (uint index = 0; index < Helper::instance()->config()->numWorkspace(); index++) {
         doCreateModel(QStringLiteral("workspace-%1").arg(index),
-                      index == TreelandConfig::ref().currentWorkspace());
+                      index == Helper::instance()->config()->currentWorkspace());
     }
 }
 
@@ -94,15 +93,15 @@ int Workspace::getRightWorkspaceId(int workspaceId)
 void Workspace::addSurface(SurfaceWrapper *surface, int workspaceId)
 {
     Q_ASSERT(surface && !surface->container() && surface->workspaceId() == -1);
-    SurfaceContainer::addSurface(surface);
 
     auto model = modelFromId(workspaceId);
     Q_ASSERT(model);
 
-    if (!surface->ownsOutput())
-        surface->setOwnsOutput(rootContainer()->primaryOutput());
+    SurfaceContainer::addSurface(surface);
+    Q_ASSERT(surface->ownsOutput() || rootContainer()->primaryOutput() == nullptr);
 
     model->addSurface(surface);
+
     surface->setHasInitializeContainer(true);
 }
 
@@ -158,7 +157,7 @@ int Workspace::modelIndexOfSurface(SurfaceWrapper *surface) const
 int Workspace::createModel(const QString &name, bool visible)
 {
     auto id = doCreateModel(name, visible);
-    TreelandConfig::ref().setNumWorkspace(count());
+    Helper::instance()->config()->setNumWorkspace(count());
     Q_EMIT countChanged();
     return id;
 }
@@ -168,7 +167,7 @@ void Workspace::removeModel(int index)
     Q_ASSERT(m_models->rowCount() > 1); // At least one workspace
     Q_ASSERT(index >= 0 && index < m_models->rowCount());
     doRemoveModel(index);
-    TreelandConfig::ref().setNumWorkspace(count());
+    Helper::instance()->config()->setNumWorkspace(count());
     Q_EMIT countChanged();
 }
 
@@ -183,12 +182,12 @@ WorkspaceModel *Workspace::modelFromId(int id) const
 {
     if (id == ShowOnAllWorkspaceId)
         return m_showOnAllWorkspaceModel;
-    auto foundModel = std::find_if(m_models->objects().begin(),
-                                   m_models->objects().end(),
+    auto foundModel = std::find_if(m_models->objects().constBegin(),
+                                   m_models->objects().constEnd(),
                                    [id](WorkspaceModel *model) {
                                        return model->id() == id;
                                    });
-    return foundModel == m_models->objects().end() ? nullptr : *foundModel;
+    return foundModel == m_models->objects().constEnd() ? nullptr : *foundModel;
 }
 
 int Workspace::currentIndex() const
@@ -324,16 +323,17 @@ WorkspaceModel *Workspace::showOnAllWorkspaceModel() const
 void Workspace::doSetCurrentIndex(int newCurrentIndex)
 {
     m_currentIndex = newCurrentIndex;
-    TreelandConfig::ref().setCurrentWorkspace(newCurrentIndex);
+    Helper::instance()->config()->setCurrentWorkspace(newCurrentIndex);
 }
 
 void Workspace::startPreviewing(SurfaceWrapper *previewingItem)
 {
-    if (m_previewingItem && m_previewingItem->shellSurface() ) {
-        // Check shellSurface() since SurfaceWrapper::aboutToBeInvalidated can't make QPointer null in time
-        auto modle = modelFromId(m_previewingItem->workspaceId());
-        m_previewingItem->setOpacity(modle->opaque() ? 1.0 : 0.0);
-        m_previewingItem->setHideByWorkspace(!modle->visible());
+    if (m_previewingItem && m_previewingItem->shellSurface()) {
+        // Check shellSurface() since SurfaceWrapper::aboutToBeInvalidated can't make QPointer null
+        // in time
+        auto model = modelFromId(m_previewingItem->workspaceId());
+        m_previewingItem->setOpacity(model->opaque() ? 1.0 : 0.0);
+        m_previewingItem->setHideByWorkspace(!model->visible());
     }
     m_previewingItem = previewingItem;
     current()->setOpaque(false);
@@ -345,9 +345,9 @@ void Workspace::stopPreviewing()
 {
     current()->setOpaque(true);
     if (m_previewingItem && m_previewingItem->shellSurface()) {
-        auto modle = modelFromId(m_previewingItem->workspaceId());
-        m_previewingItem->setOpacity(modle->opaque() ? 1.0 : 0.0);
-        m_previewingItem->setHideByWorkspace(!modle->visible());
+        auto model = modelFromId(m_previewingItem->workspaceId());
+        m_previewingItem->setOpacity(model->opaque() ? 1.0 : 0.0);
+        m_previewingItem->setHideByWorkspace(!model->visible());
         m_previewingItem = nullptr;
     }
 }
@@ -359,26 +359,26 @@ void Workspace::pushActivedSurface(SurfaceWrapper *surface)
         return;
     }
     if (surface->showOnAllWorkspace()) [[unlikely]] {
-        for (auto wpModle : m_models->objects())
-            wpModle->pushActivedSurface(surface);
+        for (auto wpModel : m_models->objects())
+            wpModel->pushActivedSurface(surface);
         m_showOnAllWorkspaceModel->pushActivedSurface(surface);
     } else {
-        auto wpModle = modelFromId(surface->workspaceId());
-        Q_ASSERT(wpModle);
-        wpModle->pushActivedSurface(surface);
+        auto wpModel = modelFromId(surface->workspaceId());
+        Q_ASSERT(wpModel);
+        wpModel->pushActivedSurface(surface);
     }
 }
 
 void Workspace::removeActivedSurface(SurfaceWrapper *surface)
 {
     if (surface->showOnAllWorkspace()) [[unlikely]] {
-        for (auto wpModle : m_models->objects())
-            wpModle->removeActivedSurface(surface);
+        for (auto wpModel : m_models->objects())
+            wpModel->removeActivedSurface(surface);
         m_showOnAllWorkspaceModel->removeActivedSurface(surface);
     } else {
-        auto wpModle = modelFromId(surface->workspaceId());
-        Q_ASSERT(wpModle);
-        wpModle->removeActivedSurface(surface);
+        auto wpModel = modelFromId(surface->workspaceId());
+        Q_ASSERT(wpModel);
+        wpModel->removeActivedSurface(surface);
     }
 }
 

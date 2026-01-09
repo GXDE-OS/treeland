@@ -6,16 +6,12 @@ on:
       - 'waylib/**'
       - 'qwlroots/**'
       - '.github/workflows/waylib-archlinux-build.yml'
-    branches:
-      - master
 
   pull_request:
     paths:
       - 'waylib/**'
       - 'qwlroots/**'
       - '.github/workflows/waylib-archlinux-build.yml'
-    branches:
-      - master
 
 jobs:
   container:
@@ -34,8 +30,6 @@ jobs:
           pacman -Syu --noconfirm --noprogressbar fakeroot meson sudo
 
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Create qwlroots symlink for waylib
         run: |

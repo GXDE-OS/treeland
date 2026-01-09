@@ -7,8 +7,15 @@
 #include <qwglobal.h>
 
 #include <QObject>
+#include <QList>
+#include <QPointer>
+#include <QHash>
 
 Q_MOC_INCLUDE("workspace/workspace.h")
+
+QW_BEGIN_NAMESPACE
+class qw_buffer;
+QW_END_NAMESPACE
 
 class Helper;
 class SurfaceWrapper;
@@ -27,6 +34,7 @@ class WXdgShell;
 class WLayerShell;
 class WLayerSurface;
 class WXWayland;
+class WToplevelSurface; // forward declare base toplevel
 class WInputMethodHelper;
 class WInputPopupSurface;
 class WSeat;
@@ -41,6 +49,9 @@ QW_END_NAMESPACE
 QT_BEGIN_NAMESPACE
 class QQuickWindow;
 QT_END_NAMESPACE
+
+class AppIdResolverManager; // forward declare new protocol manager
+class WindowSizeStore; // forward declare size store
 
 class ShellHandler : public QObject
 {
@@ -92,18 +103,43 @@ private:
                                     SurfaceWrapper *wrapper);
     void setResourceManagerAtom(WAYLIB_SERVER_NAMESPACE::WXWayland *xwayland,
                                 const QByteArray &value);
+    // Prelaunch splash related: creates a prelaunch SurfaceWrapper when PrelaunchSplash::splashRequested
+    void handlePrelaunchSplashRequested(const QString &appId, QW_NAMESPACE::qw_buffer *iconBuffer);
+
+    // --- helpers (internal) ---
+    SurfaceWrapper *matchOrCreateXdgWrapper(WAYLIB_SERVER_NAMESPACE::WXdgToplevelSurface *surface,
+                                            const QString &appId);
+    void initXdgWrapperCommon(WAYLIB_SERVER_NAMESPACE::WXdgToplevelSurface *surface,
+                              SurfaceWrapper *wrapper);
+    SurfaceWrapper *matchOrCreateXwaylandWrapper(WAYLIB_SERVER_NAMESPACE::WXWaylandSurface *surface,
+                                                 const QString &appId);
+    void initXwaylandWrapperCommon(WAYLIB_SERVER_NAMESPACE::WXWaylandSurface *surface,
+                                   SurfaceWrapper *wrapper);
+    // Unified parent/container update for Xdg & XWayland toplevel wrappers.
+    void updateWrapperContainer(SurfaceWrapper *wrapper,
+                                WAYLIB_SERVER_NAMESPACE::WSurface *parentSurface);
 
     WAYLIB_SERVER_NAMESPACE::WXdgShell *m_xdgShell = nullptr;
     WAYLIB_SERVER_NAMESPACE::WLayerShell *m_layerShell = nullptr;
     WAYLIB_SERVER_NAMESPACE::WInputMethodHelper *m_inputMethodHelper = nullptr;
     QList<WAYLIB_SERVER_NAMESPACE::WXWayland *> m_xwaylands;
 
-    RootSurfaceContainer *m_rootSurfaceContainer = nullptr;
+    QPointer<RootSurfaceContainer> m_rootSurfaceContainer;
     LayerSurfaceContainer *m_backgroundContainer = nullptr;
     LayerSurfaceContainer *m_bottomContainer = nullptr;
     Workspace *m_workspace = nullptr;
     LayerSurfaceContainer *m_topContainer = nullptr;
     LayerSurfaceContainer *m_overlayContainer = nullptr;
-    PopupSurfaceContainer *m_popupContainer = nullptr;
+    // FIXME: https://github.com/linuxdeepin/treeland/pull/428 Caused damage to the tooltip
+    // Need to find a better way to handle popup click events
+    SurfaceContainer *m_popupContainer = nullptr;
     QObject *m_windowMenu = nullptr;
+    // Prelaunch wrappers created before binding to a real shell surface
+    QList<SurfaceWrapper *> m_prelaunchWrappers;
+    // Pending toplevel surfaces (XDG or XWayland) awaiting async AppId resolve; callbacks continue only if the pointer remains in this list
+    QList<WAYLIB_SERVER_NAMESPACE::WToplevelSurface *> m_pendingAppIdResolveToplevels;
+    // New protocol based app id resolver (optional, may be null if module not loaded)
+    AppIdResolverManager *m_appIdResolverManager = nullptr;
+    WindowSizeStore *m_windowSizeStore = nullptr;
 };
+

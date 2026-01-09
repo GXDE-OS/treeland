@@ -9,10 +9,10 @@ set(WAYLIB_INCLUDE_INSTALL_DIR
     CACHE STRING "Install directory for waylib headers"
 )
 
-set(QT_COMPONENTS Core Gui Quick)
-find_package(Qt6 COMPONENTS ${QT_COMPONENTS} REQUIRED)
+find_package(Qt6 COMPONENTS GuiPrivate QuickPrivate QUIET)
+find_package(Qt6 COMPONENTS Core Gui Quick REQUIRED)
 
-qt_standard_project_setup(REQUIRES 6.6)
+qt_standard_project_setup(REQUIRES 6.8)
 
 if(QT_KNOWN_POLICY_QTP0001) # this policy was introduced in Qt 6.5
     qt_policy(SET QTP0001 NEW)
@@ -58,6 +58,13 @@ ws_generate(
     wayland-protocols
     staging/color-management/color-management-v1.xml
     color-management-v1-protocol
+)
+
+ws_generate(
+    server
+    wayland-protocols
+    staging/security-context/security-context-v1.xml
+    security-context-v1-protocol
 )
 
 #TODO: Remove after wlroots 0.20
@@ -117,6 +124,7 @@ set(SOURCES
     qtquick/winputpopupsurfaceitem.cpp
     qtquick/wsgtextureprovider.cpp
     qtquick/wtextureproviderprovider.cpp
+    qtquick/wbufferitem.cpp
 
     qtquick/private/wquickcoordmapper.cpp
     qtquick/private/wquicksocketattached.cpp
@@ -127,6 +135,7 @@ set(SOURCES
     ${WAYLAND_PROTOCOLS_OUTPUTDIR}/text-input-unstable-v1-protocol.c
     ${WAYLAND_PROTOCOLS_OUTPUTDIR}/text-input-unstable-v2-protocol.c
     ${WAYLAND_PROTOCOLS_OUTPUTDIR}/xdg-output-unstable-v1-protocol.c
+    ${WAYLAND_PROTOCOLS_OUTPUTDIR}/security-context-v1-protocol.c
     ${WAYLAND_PROTOCOLS_OUTPUTDIR}/ext-image-capture-source-v1-protocol.c #TODO: Remove after wlroots 0.20
     ${WAYLAND_PROTOCOLS_OUTPUTDIR}/ext-foreign-toplevel-list-v1-protocol.c #TODO Remove after wlroots 0.20
 
@@ -166,6 +175,10 @@ set(SOURCES
     protocols/wcursorshapemanagerv1.cpp
     protocols/woutputmanagerv1.cpp
     protocols/wextforeigntoplevellistv1.cpp
+    protocols/wsecuritycontextmanager.cpp
+    protocols/wsessionlockmanager.cpp
+    protocols/wsessionlock.cpp
+    protocols/wsessionlocksurface.cpp
 )
 
 set(HEADERS
@@ -218,6 +231,7 @@ set(HEADERS
     qtquick/wqmlcreator.h
     qtquick/wsgtextureprovider.h
     qtquick/wtextureproviderprovider.h
+    qtquick/wbufferitem.h
 
     utils/wtools.h
     utils/wthreadutils.h
@@ -262,6 +276,13 @@ set(HEADERS
     protocols/wextforeigntoplevellistv1.h
     protocols/ext_foreign_toplevel_image_capture_source_manager_v1.h #TODO: Remove after wlroots 0.20
     protocols/qwextforeigntoplevelimagecapturesourcemanagerv1.h #TODO: Move to qwlroots after wlroots 0.20
+    protocols/wsecuritycontextmanager.h
+    protocols/wsessionlockmanager.h
+    protocols/WSessionLockManager
+    protocols/wsessionlock.h
+    protocols/WSessionLock
+    protocols/wsessionlocksurface.h
+    protocols/WSessionLockSurface
 )
 
 set(PRIVATE_HEADERS
@@ -339,14 +360,13 @@ set_target_properties(${TARGET}
         POSITION_INDEPENDENT_CODE ON
 )
 
-set(QT_LIBRARIES "")
-foreach(temp ${QT_COMPONENTS})
-    list(APPEND QT_LIBRARIES "Qt6::${temp}")
-endforeach()
-
 target_link_libraries(${TARGET}
     PRIVATE
-    ${QT_LIBRARIES}
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Quick
+    Qt6::GuiPrivate
+    Qt6::QuickPrivate
     PkgConfig::WLROOTS
     PkgConfig::LIBDRM
     PkgConfig::WAYLAND

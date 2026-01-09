@@ -17,6 +17,7 @@ WAYLIB_SERVER_BEGIN_NAMESPACE
 class WOutputViewport;
 class WOutputLayer;
 class WBufferRenderer;
+class WOutputHelper;
 class WOutputRenderWindowPrivate;
 class WAYLIB_SERVER_EXPORT WOutputRenderWindow : public QQuickWindow, public QQmlParserStatus
 {
@@ -42,9 +43,12 @@ public:
                 WOutputViewport *mapFrom, QQuickItem *mapTo);
     void detach(WOutputLayer *layer, WOutputViewport *output);
 
+    WOutputHelper *getOutputHelper(WOutputViewport *output) const;
+
+    // TODO: Deprecate these convenience methods in favor of getOutputHelper() + setExtraState()
+    // for atomic multi-property operations. These are kept for simple QML use cases.
     void setOutputScale(WOutputViewport *output, float scale);
     void rotateOutput(WOutputViewport *output, WOutput::Transform t);
-    void setOutputEnabled(WOutputViewport *output, bool enabled);
 
     void init(QW_NAMESPACE::qw_renderer *renderer, QW_NAMESPACE::qw_allocator *allocator);
     QW_NAMESPACE::qw_renderer *renderer() const;
@@ -65,7 +69,6 @@ public:
 public Q_SLOTS:
     void render();
     void render(WOutputViewport *output, bool doCommit);
-    void scheduleRender();
     void update();
     void update(WOutputViewport *output);
     void setWidth(qreal arg);
@@ -78,7 +81,7 @@ Q_SIGNALS:
     void outputViewportInitialized(WAYLIB_SERVER_NAMESPACE::WOutputViewport *output);
     void initialized();
     void disableLayersChanged();
-    void renderEnd();
+    void renderEnd(QList<QPointer<WOutput>> committedOutputs);
     void effectiveDevicePixelRatioChanged(qreal scale);
 
 private:

@@ -1,4 +1,6 @@
 install(FILES
-    "org.deepin.treeland.json"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/dsg/configs/org.deepin.treeland"
+    "org.deepin.dde.treeland.json"
+    "org.deepin.dde.treeland.user.json"
+    "org.deepin.dde.treeland.output.json"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/dsg/configs/org.deepin.dde.treeland"
 )

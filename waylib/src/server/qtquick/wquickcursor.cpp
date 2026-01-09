@@ -151,7 +151,7 @@ public:
 
     mutable CursorTextureProvider *textureProvider = nullptr;
 
-    WCursor *cursor = nullptr;
+    QPointer<WCursor> cursor;
     QPointer<WOutput> output;
     WCursorImage *cursorImage = nullptr;
 
@@ -602,7 +602,10 @@ void WQuickCursor::releaseResources()
     d->invalidate();
 
     // Force to update the contents, avoid to render the invalid textures
-    QQuickItemPrivate::get(this)->dirty(QQuickItemPrivate::Content);
+    // Only mark dirty if we have a valid window to avoid crashes during window destruction
+    if (window()) {
+        QQuickItemPrivate::get(this)->dirty(QQuickItemPrivate::Content);
+    }
 }
 
 WAYLIB_SERVER_END_NAMESPACE

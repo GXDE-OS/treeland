@@ -10,13 +10,14 @@ endif()
 # Include translation utilities
 include(${CMAKE_SOURCE_DIR}/cmake/TranslationUtils.cmake)
 
-find_package(Dtk6 REQUIRED COMPONENTS Core Declarative SystemSettings)
+find_package(Dtk6 REQUIRED COMPONENTS Core Declarative SystemSettings Tools)
 if (NOT DISABLE_DDM)
-    find_package(DDM 0.2.0  REQUIRED COMPONENTS Auth Common)
+    find_package(DDM 0.2.0 REQUIRED COMPONENTS Common)
 endif()
 find_package(QT NAMES Qt6 COMPONENTS Core REQUIRED)
 find_package(Qt6 CONFIG REQUIRED ShaderTools Concurrent)
 find_package(Qt6 COMPONENTS Quick QuickControls2 REQUIRED)
+find_package(Qt6 COMPONENTS QuickPrivate QUIET)
 pkg_search_module(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
 pkg_search_module(WAYLAND REQUIRED IMPORTED_TARGET wayland-server)
 pkg_search_module(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
@@ -24,7 +25,7 @@ pkg_search_module(XCB REQUIRED IMPORTED_TARGET xcb)
 pkg_check_modules(PAM REQUIRED IMPORTED_TARGET pam)
 # qt_finalize_target will collect all executable's private dependencies that are CMake targets
 
-qt_add_dbus_adaptor(DBUS_ADAPTOR "${CMAKE_SOURCE_DIR}/misc/dbus/org.deepin.compositor1.xml" "core/treeland.h" Treeland::Treeland)
+configure_file("common/constants.h.in" "common/constants.h" IMMEDIATE @ONLY)
 
 set_source_files_properties("${CMAKE_SOURCE_DIR}/misc/interfaces/org.freedesktop.DisplayManager.xml" PROPERTIES
     NO_NAMESPACE ON
@@ -64,6 +65,27 @@ qt_add_dbus_interface(DBUS_INTERFACE   "${CMAKE_SOURCE_DIR}/misc/interfaces/org.
 qt_add_dbus_interface(DBUS_INTERFACE   "${CMAKE_SOURCE_DIR}/misc/interfaces/org.freedesktop.login1.Session.xml"          Login1Session)
 qt_add_dbus_interface(DBUS_INTERFACE   "${CMAKE_SOURCE_DIR}/misc/interfaces/org.freedesktop.login1.User.xml"             Login1User)
 
+dtk_add_config_to_cpp(
+    TREELAND_CONFIG
+    "${PROJECT_SOURCE_DIR}/misc/dconfig/org.deepin.dde.treeland.json"
+    OUTPUT_FILE_NAME "treelandconfig.hpp"
+    CLASS_NAME "TreelandConfig"
+)
+
+dtk_add_config_to_cpp(
+    TREELAND_USER_CONFIG
+    "${PROJECT_SOURCE_DIR}/misc/dconfig/org.deepin.dde.treeland.user.json"
+    OUTPUT_FILE_NAME "treelanduserconfig.hpp"
+    CLASS_NAME "TreelandUserConfig"
+)
+
+dtk_add_config_to_cpp(
+    OUTPUT_CONFIG
+    "${PROJECT_SOURCE_DIR}/misc/dconfig/org.deepin.dde.treeland.output.json"
+    OUTPUT_FILE_NAME "outputconfig.hpp"
+    CLASS_NAME "OutputConfig"
+)
+
 qt_add_library(libtreeland SHARED)
 
 set_target_properties(libtreeland PROPERTIES
@@ -77,13 +99,13 @@ qt_add_qml_module(libtreeland
     VERSION "2.0"
 
     SOURCES
-        ${DBUS_ADAPTOR}
         ${DDM_DBUS_SOURCES}
         ${DBUS_INTERFACE}
+        ${TREELAND_CONFIG}
+        ${TREELAND_USER_CONFIG}
+        ${OUTPUT_CONFIG}
         common/treelandlogging.cpp
         common/treelandlogging.h
-        config/treelandconfig.cpp
-        config/treelandconfig.h
         core/layersurfacecontainer.cpp
         core/layersurfacecontainer.h
         core/popupsurfacecontainer.cpp
@@ -98,13 +120,14 @@ qt_add_qml_module(libtreeland
         core/treeland.h
         core/windowpicker.cpp
         core/windowpicker.h
+        core/windowsizestore.h
         effects/tquickradiuseffect.cpp
         effects/tquickradiuseffect.h
         effects/tquickradiuseffect_p.h
         effects/tsgradiusimagenode.cpp
         effects/tsgradiusimagenode.h
-        $<$<NOT:$<BOOL:${DISABLE_DDM}>>:core/lockscreen.h>
-        $<$<NOT:$<BOOL:${DISABLE_DDM}>>:core/lockscreen.cpp>
+        $<$<OR:$<NOT:$<BOOL:${DISABLE_DDM}>>,$<BOOL:${EXT_SESSION_LOCK_V1}>>:core/lockscreen.h>
+        $<$<OR:$<NOT:$<BOOL:${DISABLE_DDM}>>,$<BOOL:${EXT_SESSION_LOCK_V1}>>:core/lockscreen.cpp>
         $<$<NOT:$<BOOL:${DISABLE_DDM}>>:greeter/greeterproxy.cpp>
         $<$<NOT:$<BOOL:${DISABLE_DDM}>>:greeter/greeterproxy.h>
         $<$<NOT:$<BOOL:${DISABLE_DDM}>>:greeter/sessionmodel.cpp>
@@ -126,6 +149,12 @@ qt_add_qml_module(libtreeland
         interfaces/proxyinterface.h
         output/output.cpp
         output/output.h
+        output/backlight.h
+        output/backlight.cpp
+        output/outputconfigstate.cpp
+        output/outputconfigstate.h
+        output/outputlifecyclemanager.cpp
+        output/outputlifecyclemanager.h
         seat/helper.cpp
         seat/helper.h
         surface/surfacecontainer.cpp
@@ -142,6 +171,8 @@ qt_add_qml_module(libtreeland
         utils/propertymonitor.h
         utils/loginddbustypes.h
         utils/loginddbustypes.cpp
+        utils/fpsdisplaymanager.cpp
+        utils/fpsdisplaymanager.h
         wallpaper/wallpapercontroller.cpp
         wallpaper/wallpapercontroller.h
         wallpaper/wallpaperimage.cpp
@@ -154,6 +185,14 @@ qt_add_qml_module(libtreeland
         workspace/workspaceanimationcontroller.h
         workspace/workspacemodel.cpp
         workspace/workspacemodel.h
+        xsettings/abstractsettings.h
+        xsettings/abstractsettings.cpp
+        xsettings/xsettings.h
+        xsettings/xsettings.cpp
+        xsettings/xresource.h
+        xsettings/xresource.cpp
+        xsettings/settingmanager.h
+        xsettings/settingmanager.cpp
 
     QML_FILES
         core/qml/PrimaryOutput.qml
@@ -168,6 +207,7 @@ qt_add_qml_module(libtreeland
         core/qml/OutputMenuBar.qml
         core/qml/WorkspaceSwitcher.qml
         core/qml/WorkspaceProxy.qml
+        core/qml/FpsDisplay.qml
         core/qml/Animations/GeometryAnimation.qml
         core/qml/Animations/NewAnimation.qml
         core/qml/Animations/MinimizeAnimation.qml
@@ -184,6 +224,8 @@ qt_add_qml_module(libtreeland
         core/qml/FadeBehavior.qml
         core/qml/CaptureSelectorLayer.qml
         core/qml/WindowPickerLayer.qml
+        core/qml/LockScreenFallback.qml
+        core/qml/PrelaunchSplash.qml
     RESOURCE_PREFIX
         /qt/qml
     OUTPUT_DIRECTORY
@@ -275,7 +317,6 @@ target_link_libraries(libtreeland
         PkgConfig::WAYLAND
         PkgConfig::LIBINPUT
         PkgConfig::XCB
-        $<$<NOT:$<BOOL:${DISABLE_DDM}>>:DDM::Auth>
         $<$<NOT:$<BOOL:${DISABLE_DDM}>>:DDM::Common>
         $<$<NOT:$<BOOL:${DISABLE_DDM}>>:PkgConfig::PAM>
 )
@@ -283,6 +324,7 @@ target_link_libraries(libtreeland
 add_subdirectory(plugins)
 add_subdirectory(modules)
 add_subdirectory(treeland-shortcut)
+add_subdirectory(treeland-screensaver)
 
 set(BIN_NAME treeland)
 
@@ -318,3 +360,19 @@ target_link_libraries(treeland-sd
 )
 
 install(TARGETS treeland-sd RUNTIME DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}")
+
+## XWayland wrapper
+
+pkg_check_modules(LIBXAU REQUIRED IMPORTED_TARGET "xau")
+
+qt_add_executable(treeland-xwayland
+    xwayland.cpp
+)
+
+target_link_libraries(treeland-xwayland
+    PRIVATE
+        Qt6::Core
+        PkgConfig::LIBXAU
+)
+
+install(TARGETS treeland-xwayland RUNTIME DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}")

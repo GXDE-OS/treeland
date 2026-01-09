@@ -13,7 +13,9 @@ import org.deepin.dtk 1.0 as D
 
 Item {
     id: root
-    property int aniDuration: 350
+    property int aniDuration: 200
+    // whether animations are enabled; default to true when aniDuration > 0
+    property bool enableAnimation: aniDuration > 0
     property alias spacing: listview.spacing
     property bool enableBlur: true
     // set by States
@@ -123,8 +125,13 @@ Item {
         root.pos = pos;
         root.direction = direction;
         root.target = target;
-        if (root.isShowing && root.isTooltip)
-            tooltip2PreViewAnimation.start();
+        if (root.isShowing && root.isTooltip) {
+            if (root.enableAnimation) {
+                tooltip2PreViewAnimation.start();
+            } else {
+                root.tooltip = ""
+            }
+        }
         root.isTooltip = false;
         root.isShowing = true;
     }
@@ -140,8 +147,13 @@ Item {
         root.pos = pos;
         root.direction = direction;
         root.target = target;
-        if (root.isShowing && !root.isTooltip)
-            preView2TooltipAnimation.start();
+        if (root.isShowing && !root.isTooltip) {
+            if (root.enableAnimation) {
+                preView2TooltipAnimation.start();
+            }else {
+                filterSurfaceModel.desiredSurfaces = [ ];
+            }
+        }
         root.isTooltip = true;
         root.isShowing = true;
     }
@@ -293,16 +305,16 @@ Item {
     ]
 
     Behavior on anchors.horizontalCenterOffset {
-        enabled: root.visible
+        enabled: root.visible && root.enableAnimation
         NumberAnimation {
-            duration: root.aniDuration
+            duration: root.enableAnimation ? root.aniDuration : 0
         }
     }
 
     Behavior on anchors.verticalCenterOffset {
-        enabled: root.visible
+        enabled: root.visible && root.enableAnimation
         NumberAnimation {
-            duration: root.aniDuration
+            duration: root.enableAnimation ? root.aniDuration : 0
         }
     }
     /* --- global position end --- */
@@ -396,7 +408,7 @@ Item {
         highlightFollowsCurrentItem: true
         implicitHeight: root.implicitHeight - headLayout.implicitHeight
         implicitWidth: root.implicitWidth - listview.spacing * 2
-        highlightMoveDuration: 200
+        highlightMoveDuration: root.enableAnimation ? root.aniDuration/2 : 0
         spacing: 5
         highlight: Control {
             objectName: "highlight"
@@ -446,6 +458,8 @@ Item {
         delegate: Rectangle {
             id: delegate
             objectName: "delegate"
+            // ensure removing items are below non-removing ones
+            z: (isRemoving ? -index : (10000 - index))
             visible: true
             radius: listview.radius
             color: Qt.rgba(0, 0, 0, 0.05) // TODO: dark mode
@@ -474,7 +488,8 @@ Item {
                         var item = listview.itemAtIndex(listview.model.count - 1)
                         return item?.x + item?.implicitWidth - delegate.implicitWidth
                     }
-                    duration: root.aniDuration
+                    duration: root.enableAnimation ? root.aniDuration : 0
+                    easing.type: Easing.OutExpo
                 }
                 PropertyAction { target: delegate; property: "ListView.delayRemove"; value: false }
             }
@@ -518,7 +533,7 @@ Item {
                     property: "opacity"
                     from: 0.3
                     to: 1
-                    duration: root.aniDuration
+                    duration: root.enableAnimation ? root.aniDuration : 0
                 }
 
                 NumberAnimation {
@@ -527,7 +542,8 @@ Item {
                         var item = listview.itemAtIndex(listview.model.lastSize - 1)
                         return item?.x + item?.implicitWidth - addTransition.ViewTransition.item?.implicitWidth
                     }
-                    duration: root.aniDuration
+                    duration: root.enableAnimation ? root.aniDuration : 0
+                    easing.type: Easing.OutExpo
                 }
             }
         }
@@ -552,7 +568,7 @@ Item {
                 property: "scale"
                 from: 1
                 to: 0
-                duration: root.aniDuration
+                duration: root.enableAnimation ? root.aniDuration : 0
             }
         }
         ScriptAction {
@@ -571,7 +587,7 @@ Item {
                 property: "scale"
                 from: 0
                 to: 1
-                duration: root.aniDuration
+                duration: root.enableAnimation ? root.aniDuration : 0
             }
         }
         PropertyAction { target: root; property: "tooltip"; value: "" }
@@ -701,14 +717,14 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     transformOrigin: Item.BottomLeft
                     Behavior on opacity {
-                        enabled: root.isShowing
+                        enabled: root.isShowing && root.enableAnimation
                         SequentialAnimation {
-                            NumberAnimation { duration: root.aniDuration }
+                            NumberAnimation { duration: root.enableAnimation ? root.aniDuration : 0 }
                         }
                     }
                     Behavior on scale {
-                        enabled: root.isShowing
-                        NumberAnimation { duration: root.aniDuration }
+                        enabled: root.isShowing && root.enableAnimation
+                        NumberAnimation { duration: root.enableAnimation ? root.aniDuration : 0 }
                     }
                 }
 
@@ -735,14 +751,14 @@ Item {
                     }
 
                     Behavior on opacity {
-                        enabled: root.isShowing
+                        enabled: root.isShowing && root.enableAnimation
                         SequentialAnimation {
-                            NumberAnimation { duration: root.aniDuration }
+                            NumberAnimation { duration: root.enableAnimation ? root.aniDuration : 0 }
                         }
                     }
                     Behavior on scale {
-                        enabled: root.isShowing
-                        NumberAnimation { duration: root.aniDuration }
+                        enabled: root.isShowing && root.enableAnimation
+                        NumberAnimation { duration: root.enableAnimation ? root.aniDuration : 0 }
                     }
                 }
             }
@@ -763,26 +779,34 @@ Item {
         }
 
         Behavior on implicitHeight {
-            enabled: background.visible
-            NumberAnimation { duration: root.aniDuration }
+            enabled: background.visible && root.enableAnimation
+            NumberAnimation {
+                duration: root.enableAnimation ? root.aniDuration : 0
+                easing.type: Easing.OutExpo
+            }
         }
 
         Behavior on implicitWidth {
-            enabled: background.visible
-            NumberAnimation { duration: root.aniDuration }
+            enabled: background.visible && root.enableAnimation
+            NumberAnimation {
+                duration: root.enableAnimation ? root.aniDuration : 0
+                easing.type: Easing.OutExpo
+            }
         }
 
         Behavior on anchors.horizontalCenterOffset {
-            enabled: root.visible
+            enabled: root.visible && root.enableAnimation
             NumberAnimation {
-                duration: root.aniDuration
+                duration: root.enableAnimation ? root.aniDuration : 0
+                easing.type: Easing.OutExpo
             }
         }
 
         Behavior on anchors.verticalCenterOffset {
-            enabled: root.visible
+            enabled: root.visible && root.enableAnimation
             NumberAnimation {
-                duration: root.aniDuration
+                duration: root.enableAnimation ? root.aniDuration : 0
+                easing.type: Easing.OutExpo
             }
         }
 
@@ -793,7 +817,7 @@ Item {
 
             Behavior on xScale {
                 NumberAnimation {
-                    duration: root.aniDuration
+                    duration: root.enableAnimation ? root.aniDuration : 0
                     easing.type: root.isShowing ? Easing.OutExpo : Easing.InExpo
                 }
             }
@@ -808,7 +832,7 @@ Item {
                     }
                 }
                 NumberAnimation {
-                    duration: root.aniDuration
+                    duration: root.enableAnimation ? root.aniDuration : 0
                     easing.type: root.isShowing ? Easing.OutExpo : Easing.InExpo
                 }
                 ScriptAction {

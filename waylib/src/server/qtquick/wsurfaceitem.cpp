@@ -28,6 +28,8 @@
 QW_USE_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
+Q_LOGGING_CATEGORY(waylibSurface, "waylib.server.surface", QtInfoMsg)
+
 class Q_DECL_HIDDEN SubsurfaceContainer : public QQuickItem
 {
     Q_OBJECT
@@ -196,23 +198,51 @@ public:
         });
 
         Q_ASSERT(!updateTextureConnection);
-        updateTextureConnection = surface->safeConnect(&WSurface::bufferChanged, q, [q, this] {
-            if (!live) {
-                pendingBuffer.reset(surface->buffer());
-                if (pendingBuffer)
-                    pendingBuffer->lock();
-            } else {
-                buffer.reset(surface->buffer());
-                // lock buffer to ensure the WSurfaceItem can keep the last frame after WSurface destroyed.
-                if (buffer)
-                    buffer->lock();
-                q->update();
+        updateTextureConnection = surface->safeConnect(&WSurface::commit,
+                                                       q, [q, this] (quint32 committedState) {
+            const bool bufferChanged = committedState & WLR_SURFACE_STATE_BUFFER;
+
+            if (bufferChanged) {
+                // Get the new buffer pointer from surface
+                auto newBuffer = surface->buffer();
+
+                if (!live) {
+                    // Non-live mode: update pendingBuffer
+                    // CRITICAL FIX: Only reset if the buffer pointer actually changed.
+                    // If pendingBuffer.get() == newBuffer (same pointer), calling reset() would:
+                    // 1. Call deleter (unlocker) on the old pointer → unlock()
+                    // 2. Set the new pointer (which is the same object)
+                    // 3. Then we call lock() again
+                    // This unlock-then-lock of the same buffer can cause n_locks to temporarily
+                    // hit 0, triggering wlroots' assert(buffer->n_locks > 0) in wlr_buffer_unlock().
+                    if (pendingBuffer.get() != newBuffer) {
+                        pendingBuffer.reset(newBuffer);
+                        if (Q_LIKELY(pendingBuffer))
+                            pendingBuffer->lock();
+                    }
+                } else {
+                    // Live mode: update buffer immediately
+                    // Same fix as above: only reset if the buffer pointer actually changed
+                    // to avoid double-unlock of the same buffer when surface commits without buffer change.
+                    if (buffer.get() != newBuffer) {
+                        buffer.reset(newBuffer);
+                        // lock buffer to ensure the WSurfaceItem can keep the last frame after WSurface destroyed.
+                        if (Q_LIKELY(buffer))
+                            buffer->lock();
+                    }
+
+                    q->update();
+                }
             }
+
+            if (Q_LIKELY((q->isVisible() || lastRendered) && live))
+                surface->scheduleFrameIfNeeded();
         });
 
         updateFrameDoneConnection();
         updateSurfaceState();
         rendered = true;
+        lastRendered = true;
     }
 
     void updateFrameDoneConnection() {
@@ -223,13 +253,22 @@ public:
         if (!q->window()) // maybe null due to item not fully initialized
             return;
 
-        // wayland protocol job should not run in rendering thread, so set context qobject to contentItem
-        frameDoneConnection = QObject::connect(q->window(), &QQuickWindow::afterRendering, q, [this, q](){
-            if ((rendered || q->isVisible()) && live) {
-                surface->notifyFrameDone();
-                rendered = false;
-            }
-        }); // if signal is emitted from seperated rendering thread, default QueuedConnection is used
+        auto rw = q->outputRenderWindow();
+        if (Q_LIKELY(rw)) {
+            // wayland protocol job should not run in rendering thread, so set context qobject to contentItem
+            frameDoneConnection = QObject::connect(rw, &WOutputRenderWindow::renderEnd,
+                                                   q, [this, q] (const QList<QPointer<WOutput>> committedOutputs) {
+                                                       lastRendered = rendered;
+                                                       if (Q_LIKELY((rendered || q->isVisible()) && live)
+                                                           && committedOutputs.contains(surface->framePacingOutput())) {
+                                                           surface->notifyFrameDone();
+                                                           rendered = false;
+                                                       }
+                                                   }); // if signal is emitted from seperated rendering thread, default QueuedConnection is used
+        } else {
+            qCFatal(waylibSurface) << "Needs a WOutputRenderWindow to render the WSurfaceItemContent, "
+                                      "but the current window is:" << q->window();
+        }
     }
 
     void updateSurfaceState() {
@@ -302,6 +341,7 @@ public:
     bool dontCacheLastBuffer = false;
     bool live = true;
     bool ignoreBufferOffset = false;
+    bool lastRendered = false;
     QAtomicInteger<bool> rendered = false;
 };
 
@@ -566,7 +606,10 @@ void WSurfaceItemContent::releaseResources()
     d->invalidate();
 
     // Force to update the contents, avoid to render the invalid textures
-    QQuickItemPrivate::get(this)->dirty(QQuickItemPrivate::Content);
+    // Only mark dirty if we have a valid window to avoid crashes during window destruction
+    if (window()) {
+        QQuickItemPrivate::get(this)->dirty(QQuickItemPrivate::Content);
+    }
 }
 
 void WSurfaceItemContent::itemChange(ItemChange change, const ItemChangeData &data)
@@ -1106,8 +1149,8 @@ void WSurfaceItemPrivate::initForSurface()
     if (!surfaceState)
         surfaceState.reset(new SurfaceState());
 
-    QObject::connect(surface, &WWrapObject::aboutToBeInvalidated, q,
-                     &WSurfaceItem::releaseResources, Qt::DirectConnection);
+    surface->safeConnect(&WSurface::aboutToBeInvalidated, q,
+                         &WSurfaceItem::releaseResources, Qt::DirectConnection);
     surface->safeConnect(&WSurface::hasSubsurfaceChanged, q, [this]{ onHasSubsurfaceChanged(); });
     surface->safeConnect(&qw_surface::notify_commit, q, &WSurfaceItem::onSurfaceCommit);
 
@@ -1193,7 +1236,6 @@ void WSurfaceItemPrivate::onHasSubsurfaceChanged()
 
 void WSurfaceItemPrivate::updateSubsurfaceItem()
 {
-    Q_Q(WSurfaceItem);
     auto surface = this->surface->handle()->handle();
     Q_ASSERT(surface);
     Q_ASSERT(contentContainer);
@@ -1224,8 +1266,6 @@ void WSurfaceItemPrivate::updateSubsurfaceItem()
 
 void WSurfaceItemPrivate::onPaddingsChanged()
 {
-    W_Q(WSurfaceItem);
-
     if (!surface || !surfaceState)
         return;
 

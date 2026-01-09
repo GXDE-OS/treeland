@@ -51,6 +51,9 @@ SurfaceWrapper::SurfaceWrapper(QmlEngine *qmlEngine, WToplevelSurface *shellSurf
     case Type::InputPopup:
         m_surfaceItem = new WInputPopupSurfaceItem(this);
         break;
+    case Type::SessionLock:
+        m_surfaceItem = new WSurfaceItem(this);
+        break;
     default:
         Q_UNREACHABLE();
     }
@@ -999,7 +1002,7 @@ void SurfaceWrapper::setWorkspaceId(int newWorkspaceId)
     if (m_workspaceId == newWorkspaceId)
         return;
 
-    bool onAllWorkspaceHasChanged = m_workspaceId == 0 || newWorkspaceId == 0;
+    bool onAllWorkspaceHasChanged = (m_workspaceId == 0) != (newWorkspaceId == 0);
     m_workspaceId = newWorkspaceId;
 
     if (onAllWorkspaceHasChanged)

@@ -1,4 +1,4 @@
-name: Build waylib on Debian experimental (independent)
+name: Build waylib on Debian unstable (independent)
 
 on:
   push:
@@ -6,36 +6,32 @@ on:
       - 'waylib/**'
       - 'qwlroots/**'
       - '.github/workflows/waylib-debian-build.yml'
-    branches:
-      - master
 
   pull_request:
     paths:
       - 'waylib/**'
       - 'qwlroots/**'
       - '.github/workflows/waylib-debian-build.yml'
-    branches:
-      - master
 
 jobs:
   container:
     runs-on: ubuntu-latest
-    container: debian:experimental
+    container: debian:unstable
     steps:
       - uses: actions/checkout@v4
 
       - name: Build qwlroots first
         working-directory: qwlroots
         run: |
-          # Configure apt sources for experimental
-          echo "deb http://deb.debian.org/debian experimental main" > /etc/apt/sources.list
+          # Configure apt sources for unstable
+          echo "deb http://deb.debian.org/debian unstable main" > /etc/apt/sources.list
           echo "deb http://deb.debian.org/debian sid main" >> /etc/apt/sources.list
 
           apt-get update
           apt-get install -y devscripts equivs
 
           # Add deepin community repository to install wlr-protocols
-          echo "deb [trusted=yes] https://community-packages.deepin.com/beige/ crimson main commercial community" > /etc/apt/sources.list.d/deepin-community.list
+          echo "deb [trusted=yes] http://mirrors.kernel.org/deepin/beige/ crimson main commercial community" > /etc/apt/sources.list.d/deepin-community.list
 
           # Update package lists (ignore signature errors for this temporary repo)
           apt-get update --allow-unauthenticated

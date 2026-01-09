@@ -86,6 +86,7 @@ public:
     WSurface *surface() const override;
     QW_NAMESPACE::qw_xwayland_surface *handle() const;
     WXWaylandSurface *parentXWaylandSurface() const;
+    WXWayland *xwayland() const;
 
     const QList<WXWaylandSurface *> &children() const;
     bool isToplevel() const;
@@ -105,7 +106,8 @@ public:
 
     QString title() const override;
     QString appId() const override;
-    pid_t pid() const;
+    [[nodiscard]] pid_t pid() const override;
+    [[nodiscard]] int pidFD() const override;
 
     QRect requestConfigureGeometry() const;
     ConfigureFlags requestConfigureFlags() const;

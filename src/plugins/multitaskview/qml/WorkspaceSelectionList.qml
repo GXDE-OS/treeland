@@ -16,11 +16,11 @@ Item {
     required property QtObject dragManager
     required property Multitaskview multitaskview
     readonly property real whRatio: output.outputItem.width / output.outputItem.height
-    readonly property real workspaceDelegateHeight: TreelandConfig.workspaceDelegateHeight / output.outputItem.devicePixelRatio
-    readonly property real workspaceThumbHeight: TreelandConfig.workspaceThumbHeight / output.outputItem.devicePixelRatio
-    readonly property real workspaceThumbMargin: TreelandConfig.workspaceThumbMargin / output.outputItem.devicePixelRatio
-    readonly property real highlightBorderWidth: TreelandConfig.highlightBorderWidth / output.outputItem.devicePixelRatio
-    readonly property real workspaceThumbCornerRadius: TreelandConfig.workspaceThumbCornerRadius / output.outputItem.devicePixelRatio
+    readonly property real workspaceDelegateHeight: (Helper.config.workspaceThumbHeight + 2 * Helper.config.workspaceThumbMargin) / output.outputItem.devicePixelRatio
+    readonly property real workspaceThumbHeight: Helper.config.workspaceThumbHeight / output.outputItem.devicePixelRatio
+    readonly property real workspaceThumbMargin: Helper.config.workspaceThumbMargin / output.outputItem.devicePixelRatio
+    readonly property real highlightBorderWidth: Helper.config.highlightBorderWidth / output.outputItem.devicePixelRatio
+    readonly property real workspaceThumbCornerRadius: Helper.config.workspaceThumbCornerRadius / output.outputItem.devicePixelRatio
 
 
     height: workspaceDelegateHeight
@@ -41,7 +41,7 @@ Item {
         anchors.margins: workspaceThumbMargin - highlightBorderWidth
         Rectangle {
             width: workspaceThumbHeight * root.whRatio + 2 * highlightBorderWidth
-            height: workspaceThumbHeight + 2 * highlightBorderWidth
+            height: workspaceDelegateHeight + 2 * highlightBorderWidth - 2 * workspaceThumbMargin
             border.width: highlightBorderWidth
             border.color: "blue"
             color: "transparent"
@@ -329,8 +329,8 @@ Item {
         displaced: Transition {
             NumberAnimation {
                 property: "x"
-                duration: TreelandConfig.multitaskviewAnimationDuration
-                easing.type: TreelandConfig.multitaskviewEasingCurveType
+                duration: Helper.config.multitaskviewAnimationDuration
+                easing.type: Helper.config.multitaskviewEasingCurveType
             }
         }
         width: Math.min(parent.width,
@@ -353,7 +353,7 @@ Item {
 
     D.RoundButton {
         id: wsCreateBtn
-        visible: Helper.workspace.count < TreelandConfig.maxWorkspace
+        visible: Helper.workspace.count < Helper.config.maxWorkspace
         anchors {
             right: parent.right
             verticalCenter: parent.verticalCenter
@@ -395,7 +395,7 @@ Item {
             top: root.top
             bottom: root.bottom
         }
-        visible: Helper.workspace.count < TreelandConfig.maxWorkspace
+        visible: Helper.workspace.count < Helper.config.maxWorkspace
         HoverHandler {
             onHoveredChanged: {
                 if (hovered) {

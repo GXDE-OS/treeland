@@ -29,6 +29,11 @@ public:
         initHandle(handle);
     }
 
+    ~WXWaylandSurfacePrivate() {
+        if (pidFD >= 0)
+            close(pidFD);
+    }
+
     WWRAP_HANDLE_FUNCTIONS(qw_xwayland_surface, wlr_xwayland_surface)
 
     inline bool isMaximized() const {
@@ -50,6 +55,8 @@ public:
 
     WSurface *surface = nullptr;
     WXWayland *xwayland = nullptr;
+    mutable int pidFD = -1;
+
     QList<WXWaylandSurface*> children;
     WXWaylandSurface *parent = nullptr;
     QRect lastRequestConfigureGeometry;
@@ -120,7 +127,7 @@ void WXWaylandSurfacePrivate::init()
         }
     });
     QObject::connect(handle(), &qw_xwayland_surface::notify_request_minimize,
-                     q, [this, q] (wlr_xwayland_minimize_event *event) {
+                     q, [q] (wlr_xwayland_minimize_event *event) {
         if (event->minimize) {
             Q_EMIT q->requestMinimize();
         } else {
@@ -297,6 +304,13 @@ WXWaylandSurface *WXWaylandSurface::parentXWaylandSurface() const
     return d->parent;
 }
 
+WXWayland *WXWaylandSurface::xwayland() const
+{
+    W_DC(WXWaylandSurface);
+
+    return d->xwayland;
+}
+
 const QList<WXWaylandSurface*> &WXWaylandSurface::children() const
 {
     W_DC(WXWaylandSurface);
@@ -425,6 +439,17 @@ pid_t WXWaylandSurface::pid() const
     W_DC(WXWaylandSurface);
 
     return d->nativeHandle()->pid;
+}
+
+int WXWaylandSurface::pidFD() const
+{
+    W_DC(WXWaylandSurface);
+
+    if (d->pidFD == -1) {
+        d->pidFD = syscall(SYS_pidfd_open, pid(), 0);
+    }
+
+    return d->pidFD;
 }
 
 QRect WXWaylandSurface::requestConfigureGeometry() const

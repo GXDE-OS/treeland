@@ -28,9 +28,12 @@
 
 #include <DisplayManager.h>
 #include <DisplayManagerSession.h>
+#include <Login1Manager.h>
+#include <Login1Session.h>
 #include <Messages.h>
 #include <SocketWriter.h>
 #include <security/pam_appl.h>
+#include <pwd.h>
 
 #include <DDBusSender>
 
@@ -45,31 +48,6 @@
 
 #include <woutputrenderwindow.h>
 
-struct SessionInfo
-{
-    QString sessionId;
-    quint32 uid;
-    QString userName;
-    QString seat;
-    QDBusObjectPath path;
-};
-
-static QDBusArgument &operator<<(QDBusArgument &argument, const SessionInfo &info)
-{
-    argument.beginStructure();
-    argument << info.sessionId << info.uid << info.userName << info.seat << info.path;
-    argument.endStructure();
-    return argument;
-}
-
-static const QDBusArgument &operator>>(const QDBusArgument &argument, SessionInfo &info)
-{
-    argument.beginStructure();
-    argument >> info.sessionId >> info.uid >> info.userName >> info.seat >> info.path;
-    argument.endStructure();
-    return argument;
-}
-
 using namespace DDM;
 
 class GreeterProxyPrivate
@@ -78,7 +56,6 @@ public:
     SessionModel *sessionModel{ nullptr };
     UserModel *userModel{ nullptr };
     QLocalSocket *socket{ nullptr };
-    DisplayManager *displayManager{ nullptr };
     org::deepin::DisplayManager *ddmDisplayManager{ nullptr };
     QDBusUnixFileDescriptor authFd;
     QString hostName;
@@ -88,6 +65,7 @@ public:
     bool canHibernate{ false };
     bool canHybridSleep{ false };
     bool isLocked{ false };
+    bool isLoggedIn{ false };
 };
 
 GreeterProxy::GreeterProxy(QObject *parent)
@@ -97,10 +75,6 @@ GreeterProxy::GreeterProxy(QObject *parent)
     qDBusRegisterMetaType<SessionInfo>();
     qDBusRegisterMetaType<QList<SessionInfo>>();
 
-    d->displayManager = new DisplayManager("org.freedesktop.DisplayManager",
-                                           "/org/freedesktop/DisplayManager",
-                                           QDBusConnection::systemBus(),
-                                           this);
     d->socket = new QLocalSocket(this);
 
     // connect signals
@@ -108,6 +82,11 @@ GreeterProxy::GreeterProxy(QObject *parent)
     connect(d->socket, &QLocalSocket::disconnected, this, &GreeterProxy::disconnected);
     connect(d->socket, &QLocalSocket::readyRead, this, &GreeterProxy::readyRead);
     connect(d->socket, &QLocalSocket::errorOccurred, this, &GreeterProxy::error);
+
+    connect(this, &GreeterProxy::loginSucceeded, this, [this]([[maybe_unused]] QString user) {
+        d->isLoggedIn = true;
+        Q_EMIT isLoggedInChanged();
+    });
 
     d->ddmDisplayManager = new org::deepin::DisplayManager("org.deepin.DisplayManager",
                                                            "/org/deepin/DisplayManager",
@@ -155,6 +134,11 @@ void GreeterProxy::setUserModel(UserModel *model)
 bool GreeterProxy::isLocked() const
 {
     return d->isLocked;
+}
+
+bool GreeterProxy::isLoggedIn() const
+{
+    return d->isLoggedIn;
 }
 
 bool GreeterProxy::canPowerOff() const
@@ -214,29 +198,19 @@ void GreeterProxy::hybridSleep()
 
 void GreeterProxy::init()
 {
-    connect(d->displayManager, &DisplayManager::SessionAdded, this, &GreeterProxy::onSessionAdded);
-    connect(d->displayManager,
-            &DisplayManager::SessionRemoved,
-            this,
-            &GreeterProxy::onSessionRemoved);
-
-    // Use async call to avoid blocking
-    QDBusInterface dbus("org.freedesktop.DBus",
-                        "/org/freedesktop/DBus",
-                        "org.freedesktop.DBus.Properties",
-                        QDBusConnection::systemBus());
-    QDBusPendingCall call = dbus.asyncCall("Get", DisplayManager::staticInterfaceName(), "Sessions");
-    auto *watcher = new QDBusPendingCallWatcher(call);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *watcher) {
-        QDBusReply<QList<QDBusObjectPath>> reply = watcher->reply();
-        if (reply.isValid()) {
-            auto sessions = reply.value();
-            for (auto session : sessions) {
-                onSessionAdded(session);
-            }
-        }
-        watcher->deleteLater();
-    });
+    auto conn = QDBusConnection::systemBus();
+    conn.connect(Logind::serviceName(),
+                 Logind::managerPath(),
+                 Logind::managerIfaceName(),
+                 "SessionNew",
+                 this,
+                 SLOT(onSessionNew(QString, QDBusObjectPath)));
+    conn.connect(Logind::serviceName(),
+                 Logind::managerPath(),
+                 Logind::managerIfaceName(),
+                 "SessionRemoved",
+                 this,
+                 SLOT(onSessionRemoved(QString, QDBusObjectPath)));
 }
 
 void GreeterProxy::login(const QString &user, const QString &password, const int sessionIndex)
@@ -260,10 +234,10 @@ void GreeterProxy::login(const QString &user, const QString &password, const int
     QModelIndex index = d->sessionModel->index(sessionIndex, 0);
 
     // send command to the daemon
-    Session::Type type =
-        static_cast<Session::Type>(d->sessionModel->data(index, SessionModel::TypeRole).toInt());
+    DDM::Session::Type type =
+        static_cast<DDM::Session::Type>(d->sessionModel->data(index, SessionModel::TypeRole).toInt());
     QString name = d->sessionModel->data(index, SessionModel::FileRole).toString();
-    Session session(type, name);
+    DDM::Session session(type, name);
     SocketWriter(d->socket) << quint32(GreeterMessages::Login) << user << password << session;
 }
 
@@ -288,73 +262,11 @@ void GreeterProxy::unlock(const QString &user, const QString &password)
 void GreeterProxy::logout()
 {
     qCDebug(treelandGreeter) << "Logout.";
-    const auto path = currentSessionPath();
-    if (path.isEmpty()) {
-        qCWarning(treelandGreeter, "No session logged in.");
-        return;
-    }
-    qCDebug(treelandGreeter) << "Terminate the session" << path;
-    auto reply = DDBusSender::system()
-                     .service("org.freedesktop.login1")
-                     .path(path)
-                     .interface("org.freedesktop.login1.Session")
-                     .method("Terminate")
-                     .call();
-    if (reply.isError()) {
-        qCWarning(treelandGreeter) << "Failed to logout, error:" << reply.error().message();
-    }
-}
-
-QString GreeterProxy::currentSessionPath() const
-{
-    auto userInfo = userModel()->currentUser();
-    if (!userInfo) {
-        qCWarning(treelandGreeter) << "No user logged in.";
-        return {};
-    }
-
-    QDBusPendingReply<QList<SessionInfo>> sessionsRelpy =
-        DDBusSender::system()
-            .service("org.freedesktop.login1")
-            .path("/org/freedesktop/login1")
-            .interface("org.freedesktop.login1.Manager")
-            .method("ListSessions")
-            .call();
-    if (sessionsRelpy.isError()) {
-        qCWarning(treelandGreeter) << "Failed to logout, error:" << sessionsRelpy.error().message();
-        return {};
-    }
-
-    QStringList userSessions;
-    const auto sessions = sessionsRelpy.value();
-    for (auto item : sessions) {
-        if (item.uid != userInfo->UID())
-            continue;
-        // TODO multiple seats.
-        if (item.seat.isEmpty())
-            continue;
-        userSessions << item.path.path();
-    }
-    std::sort(userSessions.begin(), userSessions.end(), [](const QString &s1, const QString &s2) {
-        return s1.localeAwareCompare(s2) > 0;
-    });
-    for (auto item : userSessions) {
-        QDBusPendingReply<QVariant> relpy = DDBusSender::system()
-                                                .service("org.freedesktop.login1")
-                                                .path(item)
-                                                .interface("org.freedesktop.login1.Session")
-                                                .property("Active")
-                                                .get();
-        if (relpy.value().toBool())
-            return item;
-    }
-    return {};
-}
-
-void GreeterProxy::activateUser(const QString &user)
-{
-    auto userInfo = userModel()->get(user);
-    SocketWriter(d->socket) << quint32(GreeterMessages::ActivateUser) << user;
+    d->isLoggedIn = false;
+    Q_EMIT isLoggedInChanged();
+    auto session = Helper::instance()->activeSession().lock();
+    SocketWriter(d->socket) << quint32(GreeterMessages::Logout) << session->id;
+    Helper::instance()->removeSession(session);
 }
 
 void GreeterProxy::connected()
@@ -362,7 +274,7 @@ void GreeterProxy::connected()
     qCDebug(treelandGreeter) << "Connected to the daemon.";
 
     SocketWriter(d->socket) << quint32(GreeterMessages::Connect)
-                            << Helper::instance()->defaultWaylandSocket()->fullServerName();
+                            << Helper::instance()->globalWaylandSocket()->fullServerName();
 }
 
 void GreeterProxy::disconnected()
@@ -377,24 +289,28 @@ void GreeterProxy::error()
     qCCritical(treelandGreeter) << "Socket error: " << d->socket->errorString();
 }
 
-void GreeterProxy::onSessionAdded(const QDBusObjectPath &session)
+void GreeterProxy::updateUserLoginState(const QDBusObjectPath &path, bool loggedIn)
 {
-    DisplaySession s(d->displayManager->service(), session.path(), QDBusConnection::systemBus());
-
-    userModel()->updateUserLoginState(s.userName(), true);
-    updateLocketState();   
+    QThreadPool::globalInstance()->start([this, path, loggedIn] {
+        OrgFreedesktopLogin1SessionInterface session(Logind::serviceName(),
+                                                     path.path(),
+                                                     QDBusConnection::systemBus());
+        QString username = session.name();
+        QMetaObject::invokeMethod(this, [this, username, loggedIn]() {
+            userModel()->updateUserLoginState(username, loggedIn);
+            updateLocketState();
+        });
+    });
 }
 
-void GreeterProxy::onSessionRemoved([[maybe_unused]] const QDBusObjectPath &session)
+void GreeterProxy::onSessionNew([[maybe_unused]] const QString &id, const QDBusObjectPath &path)
 {
-    // FIXME: Reset all user state, because we can't know which user was logout.
-    userModel()->clearUserLoginState();
-    updateLocketState();
+    updateUserLoginState(path, true);
+}
 
-    auto sessions = d->displayManager->sessions();
-    for (auto session : sessions) {
-        onSessionAdded(session);
-    }
+void GreeterProxy::onSessionRemoved([[maybe_unused]] const QString &id, const QDBusObjectPath &path)
+{
+    updateUserLoginState(path, false);
 }
 
 void GreeterProxy::readyRead()
@@ -469,7 +385,8 @@ void GreeterProxy::readyRead()
         } break;
         case DaemonMessages::UserActivateMessage: {
             QString user;
-            input >> user;
+            int sessionId;
+            input >> user >> sessionId;
 
             // NOTE: maybe DDM will active dde user.
             if (!d->userModel->getUser(user)) {
@@ -480,18 +397,22 @@ void GreeterProxy::readyRead()
             }
 
             d->userModel->setCurrentUserName(user);
+            // userLoggedIn signal is connected with Helper::updateActiveUserSession
+            Q_EMIT d->userModel->userLoggedIn(user, sessionId);
 
-            qCInfo(treelandGreeter) << "activate successfully: " << user;
+            qCInfo(treelandGreeter) << "activate successfully: " << user << ", XDG_SESSION_ID: " << sessionId;
         } break;
         case DaemonMessages::UserLoggedIn: {
             QString user;
-            input >> user;
+            int sessionId;
+            input >> user >> sessionId;
 
             // This will happen after a crash recovery of treeland
             qCInfo(treelandGreeter) << "User " << user << " is already logged in";
             auto userPtr = d->userModel->getUser(user);
             if (userPtr) {
                 userPtr.get()->setLogined(true);
+                Q_EMIT d->userModel->userLoggedIn(user, sessionId);
             } else {
                 qCWarning(treelandGreeter) << "User " << user << " logged in but not found";
             }
@@ -505,18 +426,20 @@ void GreeterProxy::readyRead()
 
 bool GreeterProxy::localValidation(const QString &user, const QString &password) const
 {
+    auto utf8Password = password.toUtf8();
     struct pam_conv conv = {
         []([[maybe_unused]] int num_msg,
            [[maybe_unused]] const struct pam_message **msg,
            struct pam_response **resp,
            void *appdata_ptr) {
-            auto *reply = new pam_response;
+            // pam uses free, we must malloc
+            auto *reply = static_cast<pam_response *>(malloc(sizeof(pam_response)));
             reply->resp = strdup(static_cast<const char *>(appdata_ptr)); // 将密码传递给PAM
             reply->resp_retcode = 0;
             *resp = reply;
             return PAM_SUCCESS;
         },
-        static_cast<void *>(password.toUtf8().data()),
+        static_cast<void *>(utf8Password.data()),
     };
 
     pam_handle_t *pamh = nullptr;

@@ -12,6 +12,7 @@
 #include <woutputitem.h>
 #include <woutputlayout.h>
 #include <wxdgpopupsurface.h>
+#include <wxdgtoplevelsurface.h>
 
 #include <qwoutputlayout.h>
 
@@ -110,6 +111,8 @@ void RootSurfaceContainer::addOutput(Output *output)
     if (!m_primaryOutput)
         setPrimaryOutput(output);
 
+    // Register all outputs (including primary and proxy/copy) to ensure
+    // LayerSurfaceContainer is initialized for every active display.
     SurfaceContainer::addOutput(output);
 }
 
@@ -174,10 +177,18 @@ void RootSurfaceContainer::doMoveResize(const QPointF &incrementPos)
         if (moveResizeState.resizeEdges & Qt::BottomEdge)
             geo.setBottom(geo.bottom() + incrementPos.y());
 
-        moveResizeState.surface->resize(geo.size());
+        QRectF alignedGeometry = moveResizeState.surface->alignGeometryToPixelGrid(geo);
+        moveResizeState.surface->resize(alignedGeometry.size());
+
+        // TODO: Pixel alignment for window position and size during move/resize operations
+        // Current approach: Align position and size in the manager layer
+        // Better approach:
+        //   1. Keep logical geometry (position + size) intact at manager layer (no alignment)
+        //   2. Only apply pixel alignment at render time in the renderer
     } else {
         auto new_pos = moveResizeState.startGeometry.topLeft() + incrementPos;
-        moveResizeState.surface->setPosition(new_pos);
+        QPointF alignedPos = moveResizeState.surface->alignToPixelGrid(new_pos);
+        moveResizeState.surface->setPosition(alignedPos);
     }
 }
 
@@ -193,18 +204,21 @@ void RootSurfaceContainer::endMoveResize()
     if (!moveResizeState.surface)
         return;
 
-    auto o = moveResizeState.surface->ownsOutput();
-    moveResizeState.surface->shellSurface()->setResizeing(false);
+    if (moveResizeState.surface->shellSurface()->isInitialized()) {
+        auto o = moveResizeState.surface->ownsOutput();
+        moveResizeState.surface->shellSurface()->setResizeing(false);
 
-    if (!o || !moveResizeState.surface->surface()->outputs().contains(o->output())) {
-        o = cursorOutput();
-        Q_ASSERT(o);
-        moveResizeState.surface->setOwnsOutput(o);
+        if (!o || !moveResizeState.surface->outputs().contains(o->output())) {
+            o = cursorOutput();
+            Q_ASSERT(o);
+            moveResizeState.surface->setOwnsOutput(o);
+        }
+
+        ensureSurfaceNormalPositionValid(moveResizeState.surface);
+
+        moveResizeState.surface->setXwaylandPositionFromSurface(true);
     }
 
-    ensureSurfaceNormalPositionValid(moveResizeState.surface);
-
-    moveResizeState.surface->setXwaylandPositionFromSurface(true);
     moveResizeState.surface = nullptr;
     Q_EMIT moveResizeFinised();
 }
@@ -318,7 +332,8 @@ bool RootSurfaceContainer::filterSurfaceGeometryChanged(SurfaceWrapper *surface,
         if (geometry.topLeft() != newGeometry.topLeft()) {
             newGeometry = geometry;
             moveResizeState.setSurfacePositionForAnchorEdgets = true;
-            surface->setPosition(geometry.topLeft());
+            QPointF alignedPos = moveResizeState.surface->alignToPixelGrid(geometry.topLeft());
+            surface->setPosition(alignedPos);
             moveResizeState.setSurfacePositionForAnchorEdgets = false;
         }
     }
@@ -388,6 +403,7 @@ void RootSurfaceContainer::updateSurfaceOutputs(SurfaceWrapper *surface)
     const QRectF geometry = surface->geometry();
     auto outputs = m_outputLayout->getIntersectedOutputs(geometry.toRect());
     surface->setOutputs(outputs);
+    // TODO: Update ownsOutput during move/resize on multi-output systems
 }
 
 static qreal pointToRectMinDistance(const QPointF &pos, const QRectF &rect)
@@ -482,4 +498,36 @@ void RootSurfaceContainer::ensureSurfaceNormalPositionValid(SurfaceWrapper *surf
 OutputListModel *RootSurfaceContainer::outputModel() const
 {
     return m_outputModel;
+}
+
+void RootSurfaceContainer::moveSurfacesToOutput(const QList<SurfaceWrapper *> &surfaces,
+                                                Output *targetOutput,
+                                                Output *sourceOutput)
+{
+    if (!surfaces.isEmpty() && targetOutput) {
+        const QRectF targetGeometry = targetOutput->geometry();
+
+        for (auto *surface : surfaces) {
+            if (!surface)
+                continue;
+
+            const QSizeF size = surface->size();
+            QPointF newPos;
+
+            if (surface->ownsOutput() == targetOutput) {
+                newPos = surface->position();
+            } else {
+                const QRectF sourceGeometry =
+                    sourceOutput ? sourceOutput->geometry() : surface->ownsOutput()->geometry();
+                const QPointF relativePos = surface->position() - sourceGeometry.center();
+                newPos = targetGeometry.center() + relativePos;
+                surface->setOwnsOutput(targetOutput);
+            }
+            newPos.setX(
+                qBound(targetGeometry.left(), newPos.x(), targetGeometry.right() - size.width()));
+            newPos.setY(
+                qBound(targetGeometry.top(), newPos.y(), targetGeometry.bottom() - size.height()));
+            surface->setPosition(newPos);
+        }
+    }
 }

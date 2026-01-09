@@ -3,11 +3,11 @@
 
 #include "multitaskview.h"
 
-#include "config/treelandconfig.h"
 #include "output/output.h"
 #include "seat/helper.h"
 #include "surface/surfacecontainer.h"
 #include "workspace/workspace.h"
+#include "treelanduserconfig.hpp"
 #include "common/treelandlogging.h"
 
 #include <woutputitem.h>
@@ -50,9 +50,23 @@ void Multitaskview::setActiveReason(ActiveReason activeReason)
     Q_EMIT activeReasonChanged();
 }
 
+qreal Multitaskview::partialFactor() const
+{
+    return m_partialFactor;
+}
+
+void Multitaskview::updatePartialFactor(qreal delta)
+{
+    qreal newPartialFactor = qBound(0.0, m_partialFactor + delta, 1.0);
+    if (qFuzzyCompare(newPartialFactor, m_partialFactor))
+        return;
+    m_partialFactor = newPartialFactor;
+    Q_EMIT partialFactorChanged();
+}
+
 void Multitaskview::exit(SurfaceWrapper *surface, bool immediately)
 {
-    TreelandConfig::ref().setBlockActivateSurface(false);
+    Helper::instance()->setBlockActivateSurface(false);
 
     if (surface) {
         Helper::instance()->forceActivateSurface(surface);
@@ -100,7 +114,7 @@ void MultitaskviewSurfaceModel::initializeModel()
     QList<SurfaceWrapper *> surfaces(workspace()->surfaces());
     surfaces << Helper::instance()->workspace()->showOnAllWorkspaceModel()->surfaces();
     for (const auto &surface : std::as_const(surfaces)) {
-        if (!Helper::instance()->surfaceBelongsToCurrentUser(surface))
+        if (!Helper::instance()->surfaceBelongsToCurrentSession(surface))
             continue;
         if (surface->ownsOutput() == output()) {
             if (surfaceReady(surface)) {
@@ -230,8 +244,8 @@ uint MultitaskviewSurfaceModel::prevSameAppIndex(uint index)
     };
     auto i = circularPrev(index);
     for (; i != index; i = circularPrev(i)) {
-        if (m_data[i]->wrapper->shellSurface()->appId()
-            == m_data[index]->wrapper->shellSurface()->appId()) {
+        if (m_data[i]->wrapper->appId()
+            == m_data[index]->wrapper->appId()) {
             break;
         }
     }
@@ -249,8 +263,8 @@ uint MultitaskviewSurfaceModel::nextSameAppIndex(uint index)
     };
     auto i = circularNext(index);
     for (; i != index; i = circularNext(i)) {
-        if (m_data[i]->wrapper->shellSurface()->appId()
-            == m_data[index]->wrapper->shellSurface()->appId()) {
+        if (m_data[i]->wrapper->appId()
+            == m_data[index]->wrapper->appId()) {
             break;
         }
     }
@@ -279,12 +293,12 @@ bool MultitaskviewSurfaceModel::tryLayout(const QList<ModelDataPtr> &rawData,
     qreal acc = 0;
     auto devicePixelRatio = output()->outputItem()->devicePixelRatio();
     auto topContentMargin =
-        TreelandConfig::ref().multitaskviewTopContentMargin() / devicePixelRatio;
+        Helper::instance()->config()->multitaskviewTopContentMargin() / devicePixelRatio;
     auto bottomContentMargin =
-        TreelandConfig::ref().multitaskviewBottomContentMargin() / devicePixelRatio;
-    auto cellPadding = TreelandConfig::ref().multitaskviewCellPadding() / devicePixelRatio;
+        Helper::instance()->config()->multitaskviewBottomContentMargin() / devicePixelRatio;
+    auto cellPadding = Helper::instance()->config()->multitaskviewCellPadding() / devicePixelRatio;
     auto horizontalMargin =
-        TreelandConfig::ref().multitaskviewHorizontalMargin() / devicePixelRatio;
+        Helper::instance()->config()->multitaskviewHorizontalMargin() / devicePixelRatio;
     auto availWidth = std::max(0.0, layoutArea().width() - 2 * horizontalMargin);
     auto availHeight =
         std::max(0.0, layoutArea().height() - topContentMargin - bottomContentMargin);
@@ -304,7 +318,7 @@ bool MultitaskviewSurfaceModel::tryLayout(const QList<ModelDataPtr> &rawData,
         if (newAcc <= availWidth) {
             acc = newAcc;
             currow.append(modelData);
-        } else if (newAcc / availWidth > TreelandConfig::ref().multitaskviewLoadFactor()) {
+        } else if (newAcc / availWidth > Helper::instance()->config()->multitaskviewLoadFactor()) {
             acc = curW;
             nrows++;
             rowstmp.append(currow);
@@ -332,12 +346,12 @@ void MultitaskviewSurfaceModel::calcDisplayPos(const QList<ModelDataPtr> &rawDat
 {
     auto devicePixelRatio = output()->outputItem()->devicePixelRatio();
     auto topContentMargin =
-        TreelandConfig::ref().multitaskviewTopContentMargin() / devicePixelRatio;
+        Helper::instance()->config()->multitaskviewTopContentMargin() / devicePixelRatio;
     auto bottomContentMargin =
-        TreelandConfig::ref().multitaskviewBottomContentMargin() / devicePixelRatio;
-    auto cellPadding = TreelandConfig::ref().multitaskviewCellPadding() / devicePixelRatio;
+        Helper::instance()->config()->multitaskviewBottomContentMargin() / devicePixelRatio;
+    auto cellPadding = Helper::instance()->config()->multitaskviewCellPadding() / devicePixelRatio;
     auto horizontalMargin =
-        TreelandConfig::ref().multitaskviewHorizontalMargin() / devicePixelRatio;
+        Helper::instance()->config()->multitaskviewHorizontalMargin() / devicePixelRatio;
     auto availWidth = std::max(0.0, layoutArea().width() - 2 * horizontalMargin);
     auto availHeight =
         std::max(0.0, layoutArea().height() - topContentMargin - bottomContentMargin);
@@ -380,9 +394,9 @@ void MultitaskviewSurfaceModel::doCalculateLayout(const QList<ModelDataPtr> &raw
     auto devicePixelRatio = output()->outputItem()->devicePixelRatio();
     auto maxWindowHeight =
         std::min(layoutArea().height(),
-                 static_cast<qreal>(TreelandConfig::ref().normalWindowHeight() / devicePixelRatio));
-    auto minWindowHeight = TreelandConfig::ref().minMultitaskviewSurfaceHeight() / devicePixelRatio;
-    auto windowHeightStep = TreelandConfig::ref().windowHeightStep() / devicePixelRatio;
+                 static_cast<qreal>(Helper::instance()->config()->normalWindowHeight() / devicePixelRatio));
+    auto minWindowHeight = Helper::instance()->config()->minMultitaskviewSurfaceHeight() / devicePixelRatio;
+    auto windowHeightStep = Helper::instance()->config()->windowHeightStep() / devicePixelRatio;
     auto rowH = maxWindowHeight;
     while (rowH > minWindowHeight) {
         if (tryLayout(rawData, rowH)) {
@@ -408,7 +422,7 @@ void MultitaskviewSurfaceModel::doUpdateZOrder(const QList<ModelDataPtr> &rawDat
                 return false;
             }
         });
-    std::for_each(rawData.begin(), rawData.end(), [surfaces, this](ModelDataPtr modelData) {
+    std::for_each(rawData.begin(), rawData.end(), [surfaces](ModelDataPtr modelData) {
         modelData->zorder = surfaces.indexOf(modelData->wrapper);
     });
 }
@@ -465,7 +479,7 @@ void MultitaskviewSurfaceModel::handleSurfaceStateChanged()
     auto surface = qobject_cast<SurfaceWrapper *>(sender());
     Q_ASSERT(surface);
     auto dataPtr =
-        std::find_if(m_data.begin(), m_data.end(), [this, surface](const ModelDataPtr &modelData) {
+        std::find_if(m_data.begin(), m_data.end(), [surface](const ModelDataPtr &modelData) {
             return modelData->wrapper == surface;
         });
     if (dataPtr == m_data.end())
@@ -495,7 +509,7 @@ void MultitaskviewSurfaceModel::handleSurfaceMappedChanged()
 
 void MultitaskviewSurfaceModel::handleSurfaceAdded(SurfaceWrapper *surface)
 {
-    if (!Helper::instance()->surfaceBelongsToCurrentUser(surface))
+    if (!Helper::instance()->surfaceBelongsToCurrentSession(surface))
         return;
     connect(surface,
             &SurfaceWrapper::ownsOutputChanged,
@@ -630,7 +644,13 @@ void MultitaskviewSurfaceModel::monitorUnreadySurface(SurfaceWrapper *surface)
 
 bool MultitaskviewSurfaceModel::surfaceReady(SurfaceWrapper *surface)
 {
-    return surface->surface()->mapped() && surfaceGeometry(surface).isValid();
+    if (surface->type() != SurfaceWrapper::Type::SplashScreen) {
+        auto surf = surface->surface();
+        if (!surf || !surf->mapped()) {
+            return false;
+        }
+    }
+    return surfaceGeometry(surface).isValid();
 }
 
 QRectF MultitaskviewSurfaceModel::surfaceGeometry(SurfaceWrapper *surface)

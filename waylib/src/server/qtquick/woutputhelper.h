@@ -35,9 +35,8 @@ class WAYLIB_SERVER_EXPORT WOutputHelper : public QObject, public WObject
 {
     Q_OBJECT
     W_DECLARE_PRIVATE(WOutputHelper)
-    Q_PROPERTY(bool renderable READ renderable NOTIFY renderableChanged)
     Q_PROPERTY(bool contentIsDirty READ contentIsDirty NOTIFY contentIsDirtyChanged)
-    Q_PROPERTY(bool needsFrame READ needsFrame NOTIFY needsFrameChanged FINAL)
+    Q_PROPERTY(bool needsFrame READ needsFrame FINAL)
 
 public:
     explicit WOutputHelper(WOutput *output, QObject *parent = nullptr);
@@ -52,8 +51,11 @@ public:
     void setBuffer(QW_NAMESPACE::qw_buffer *buffer);
     QW_NAMESPACE::qw_buffer *buffer() const;
 
+    // TODO: Deprecate these methods in favor of setExtraState() for atomic operations
+    // These modify internal state directly and are kept for simple QML use cases
     void setScale(float scale);
     void setTransform(WOutput::Transform t);
+
     void setDamage(const pixman_region32 *damage);
     const pixman_region32 *damage() const;
     void setLayers(const wlr_output_layer_state_array &layers);
@@ -61,22 +63,50 @@ public:
     bool testCommit();
     bool testCommit(QW_NAMESPACE::qw_buffer *buffer, const wlr_output_layer_state_array &layers);
 
-    bool renderable() const;
+    enum CommitStage {
+        BeforeCommitStage,
+        AfterCommitStage
+    };
+
+    struct ExtraState : std::shared_ptr<wlr_output_state> {
+        ExtraState()
+            : std::shared_ptr<wlr_output_state>(
+                []() {
+                    auto* state = new wlr_output_state;
+                    wlr_output_state_init(state);
+                    return state;
+                }(),
+                [](wlr_output_state* s) {
+                    if (s) {
+                        wlr_output_state_finish(s);
+                        delete s;
+                    }
+                }
+            ) {}
+        ExtraState(const std::shared_ptr<wlr_output_state>& ptr)
+            : std::shared_ptr<wlr_output_state>(ptr) {}
+        ExtraState(std::nullptr_t) : std::shared_ptr<wlr_output_state>(nullptr) {}
+    };
+
+    using CommitJobWithState = std::function<void(bool success, ExtraState committedState)>;
+    void scheduleCommitJob(CommitJobWithState job, CommitStage stage);
+    bool setExtraState(ExtraState state);
+    ExtraState extraState() const;
+
     bool contentIsDirty() const;
     bool needsFrame() const;
+    bool framePending() const;
+    bool willBeEnabled() const;
 
-    void resetState(bool resetRenderable);
+    void resetState();
     void update();
+    void scheduleFrame();
 
 protected:
-    WOutputHelper(WOutput *output, bool renderable, bool contentIsDirty, bool needsFrame, QObject *parent = nullptr);
+    WOutputHelper(WOutput *output, bool contentIsDirty, QObject *parent = nullptr);
 
 Q_SIGNALS:
-    void requestRender();
-    void damaged();
-    void renderableChanged();
     void contentIsDirtyChanged();
-    void needsFrameChanged();
 };
 
 WAYLIB_SERVER_END_NAMESPACE

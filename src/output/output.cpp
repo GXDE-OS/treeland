@@ -1,9 +1,11 @@
-// Copyright (C) 2024 JiDe Zhang <zhangjide@deepin.org>.
+// Copyright (C) 2024-2025 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "output.h"
 
-#include "config/treelandconfig.h"
+#include "outputconfig.hpp"
+#include "treelandconfig.hpp"
+#include "treelanduserconfig.hpp"
 #include "core/rootsurfacecontainer.h"
 #include "seat/helper.h"
 #include "surface/surfacewrapper.h"
@@ -15,6 +17,7 @@
 #include <winputpopupsurface.h>
 #include <wlayersurface.h>
 #include <woutputitem.h>
+#include <woutputhelper.h>
 #include <woutputlayout.h>
 #include <woutputrenderwindow.h>
 #include <wquicktextureproxy.h>
@@ -34,7 +37,7 @@
 Output *Output::create(WOutput *output, QQmlEngine *engine, QObject *parent)
 {
     auto isSoftwareCursor = [](WOutput *output) -> bool {
-        return output->handle()->is_x11() || TreelandConfig::ref().forceSoftwareCursor();
+        return output->handle()->is_x11() || Helper::instance()->globalConfig()->forceSoftwareCursor();
     };
     QQmlComponent delegate(engine, "Treeland", "PrimaryOutput");
     QObject *obj = delegate.beginCreate(engine->rootContext());
@@ -45,7 +48,7 @@ Output *Output::create(WOutput *output, QQmlEngine *engine, QObject *parent)
     QQmlEngine::setObjectOwnership(outputItem, QQmlEngine::CppOwnership);
     outputItem->setOutput(output);
 
-    connect(&TreelandConfig::ref(),
+    connect(Helper::instance()->globalConfig(),
             &TreelandConfig::forceSoftwareCursorChanged,
             obj,
             [obj, output, isSoftwareCursor]() {
@@ -81,6 +84,9 @@ Output *Output::create(WOutput *output, QQmlEngine *engine, QObject *parent)
     outputItem->setParentItem(contentItem);
     // o->m_taskBar = Helper::instance()->qmlEngine()->createTaskBar(o,
     // contentItem); o->m_taskBar->setZ(RootSurfaceContainer::TaskBarZOrder);
+
+    // reset output color to config value
+    o->setOutputColor(-1, 0);
 
     if (CmdLine::ref().enableDebugView()) {
         o->m_debugMenuBar = Helper::instance()->qmlEngine()->createMenuBar(outputItem, contentItem);
@@ -124,7 +130,7 @@ Output *Output::createCopy(WOutput *output, Output *proxy, QQmlEngine *engine, Q
     auto contentItem = Helper::instance()->window()->contentItem();
     outputItem->setParentItem(contentItem);
     o->updateOutputHardwareLayers();
-    connect(o->m_outputViewport,
+    connect(proxy->screenViewport(),
             &WOutputViewport::hardwareLayersChanged,
             o,
             &Output::updateOutputHardwareLayers);
@@ -136,8 +142,16 @@ Output::Output(WOutputItem *output, QObject *parent)
     : SurfaceListModel(parent)
     , m_item(output)
     , minimizedSurfaces(new SurfaceFilterModel(this))
+    , m_backlight(Backlight::createForOutput(output->output()))
 {
     m_outputViewport = output->property("screenViewport").value<WOutputViewport *>();
+
+    // TODO: Investigate better ways to track the panel specific persistent settings.
+    // The connector name of the panel may change.
+    QString outputName = output->output()->name();
+    m_config = OutputConfig::createByName("org.deepin.dde.treeland.outputs",
+                                    "org.deepin.dde.treeland",
+                                    "/" + outputName, this);
 }
 
 Output::~Output()
@@ -220,9 +234,9 @@ void Output::placeCentered(SurfaceWrapper *surface)
 
 void Output::placeSmartCascaded(SurfaceWrapper *surface)
 {
-    auto wpModle = Helper::instance()->workspace()->modelFromId(surface->workspaceId());
-    Q_ASSERT(wpModle);
-    auto latestActiveSurface = wpModle->activePenultimateWindow();
+    auto wpModel = Helper::instance()->workspace()->modelFromId(surface->workspaceId());
+    Q_ASSERT(wpModel);
+    auto latestActiveSurface = wpModel->activePenultimateWindow();
     if (!latestActiveSurface || latestActiveSurface == surface) {
         placeCentered(surface);
         return;
@@ -233,11 +247,11 @@ void Output::placeSmartCascaded(SurfaceWrapper *surface)
     QRectF latestActiveSurfaceGeo = latestActiveSurface->normalGeometry();
 
     qreal factor =
-        (latestActiveSurface->shellSurface()->appId() != surface->shellSurface()->appId())
+        (latestActiveSurface->appId() != surface->appId())
         ? DIFF_APP_OFFSET_FACTOR
         : SAME_APP_OFFSET_FACTOR;
     const QRectF titleBarGeometry = latestActiveSurface->titlebarGeometry();
-    qreal offset = (titleBarGeometry.isNull() ? TreelandConfig::ref().windowTitlebarHeight()
+    qreal offset = (titleBarGeometry.isNull() ? Helper::instance()->config()->windowTitlebarHeight()
                                               : titleBarGeometry.height())
         * factor;
 
@@ -373,7 +387,7 @@ void Output::enable()
 
 void Output::updateOutputHardwareLayers()
 {
-    WOutputViewport *viewportPrimary = screenViewport();
+    WOutputViewport *viewportPrimary = m_proxy->screenViewport();
     std::pair<WOutputViewport *, QQuickItem *> copyOutput = getOutputItemProperty();
     const auto layers = viewportPrimary->hardwareLayers();
     for (auto layer : layers) {
@@ -399,16 +413,19 @@ void Output::addSurface(SurfaceWrapper *surface)
         auto layer = qobject_cast<WLayerSurface *>(surface->shellSurface());
         layer->safeConnect(&WLayerSurface::layerPropertiesChanged,
                            this,
-                           &Output::arrangeAllSurfaces);
+                           &Output::arrangeLayerSurfaces);
 
-        arrangeAllSurfaces();
+        arrangeLayerSurfaces();
     } else {
         auto layoutSurface = [surface, this] {
+            if (!surface->hasInitializeContainer())
+                return;
             arrangeNonLayerSurface(surface, {});
         };
 
         connect(surface, &SurfaceWrapper::widthChanged, this, layoutSurface);
         connect(surface, &SurfaceWrapper::heightChanged, this, layoutSurface);
+        connect(surface, &SurfaceWrapper::hasInitializeContainerChanged, this, layoutSurface);
         layoutSurface();
 
         auto setyOffset = [surface, this] {
@@ -431,6 +448,7 @@ void Output::addSurface(SurfaceWrapper *surface)
 void Output::removeSurface(SurfaceWrapper *surface)
 {
     clearPopupCache(surface);
+    m_initialWindowPositionRatio.remove(surface);
     Q_ASSERT(hasSurface(surface));
     SurfaceListModel::removeSurface(surface);
     surface->disconnect(this);
@@ -645,19 +663,45 @@ void Output::arrangeNonLayerSurface(SurfaceWrapper *surface, const QSizeF &sizeD
                 if (normalGeo.width() > outputValidGeometry.width()
                     || normalGeo.height() > outputValidGeometry.height())
                     surface->resize(outputValidGeometry.size());
-                if (surface->type() == SurfaceWrapper::Type::XdgToplevel) {
+                if (surface->type() == SurfaceWrapper::Type::XdgToplevel
+                    || surface->type() == SurfaceWrapper::Type::SplashScreen) {
                     placeSmartCascaded(surface);
                 } else {
                     placeCentered(surface);
                 }
             }
         } else if (!sizeDiff.isNull() && sizeDiff.isValid()) {
-            const QSizeF outputSize = m_item->size();
-            const auto xScale = outputSize.width() / (outputSize.width() - sizeDiff.width());
-            const auto yScale = outputSize.height() / (outputSize.height() - sizeDiff.height());
-            normalGeo.moveLeft(normalGeo.x() * xScale);
-            normalGeo.moveTop(normalGeo.y() * yScale);
-            surface->moveNormalGeometryInOutput(normalGeo.topLeft());
+            QRectF validGeo = this->validGeometry();
+            // Save the window's proportional position relative to the available area during the initial scale.
+            if (!m_initialWindowPositionRatio.contains(surface)) {
+                qreal xRatio = 0.5, yRatio = 0.5; // Default center position
+                if (validGeo.width() > normalGeo.width()) {
+                    xRatio = (normalGeo.x() - validGeo.x()) / (validGeo.width() - normalGeo.width());
+                    xRatio = qBound(0.0, xRatio, 1.0);
+                }
+                if (validGeo.height() > normalGeo.height()) {
+                    yRatio = (normalGeo.y() - validGeo.y()) / (validGeo.height() - normalGeo.height());
+                    yRatio = qBound(0.0, yRatio, 1.0);
+                }
+                m_initialWindowPositionRatio[surface] = QPointF(xRatio, yRatio);
+            }
+
+            QPointF ratio = m_initialWindowPositionRatio[surface];
+            QPointF newPos;
+            newPos.setX(validGeo.x() + ratio.x() * (validGeo.width() - normalGeo.width()));
+            newPos.setY(validGeo.y() + ratio.y() * (validGeo.height() - normalGeo.height()));
+
+            // Boundary protection ensures that at least 30% of the window remains within the screen.
+            const qreal minVisibleRatio = 0.3;
+            const int minVisibleX = qMin(100, int(normalGeo.width() * minVisibleRatio));
+            const int minVisibleY = qMin(100, int(normalGeo.height() * minVisibleRatio));
+            newPos.setX(qBound(validGeo.left() - normalGeo.width() + minVisibleX,
+                            newPos.x(),
+                            validGeo.right() - minVisibleX));
+            newPos.setY(qBound(validGeo.top() - normalGeo.height() + minVisibleY,
+                            newPos.y(),
+                            validGeo.bottom() - minVisibleY));
+            surface->moveNormalGeometryInOutput(newPos);
         } else {
             QPoint clientRequstPos = surface->clientRequstPos();
             if (!clientRequstPos.isNull()) {
@@ -816,7 +860,9 @@ void Output::arrangeNonLayerSurfaces()
     m_lastSizeOnLayoutNonLayerSurfaces = currentSize;
 
     for (SurfaceWrapper *surface : surfaces()) {
-        if (surface->type() == SurfaceWrapper::Type::Layer)
+        if (surface->type() == SurfaceWrapper::Type::Layer
+            || surface->type() == SurfaceWrapper::Type::LockScreen
+            || !surface->hasInitializeContainer())
             continue;
         arrangeNonLayerSurface(surface, sizeDiff);
     }
@@ -856,4 +902,130 @@ WOutputViewport *Output::screenViewport() const
 QRectF Output::validGeometry() const
 {
     return geometry().marginsRemoved(m_exclusiveZone);
+}
+
+// do not use config()->setBrightness or config()->setColorTemperature to set color temperature or brightness
+// as doing so will have no effect.
+// use Output::setOutputColor instead
+OutputConfig *Output::config() const
+{
+    return m_config;
+}
+
+namespace {
+static inline void kelvinToRGB(double kelvin, double &r, double &g, double &b)
+{
+    kelvin = std::clamp(kelvin, 1000.0, 20000.0) / 100.0;
+
+    if (kelvin <= 66.0) r = 1.0;
+    else r = std::clamp(329.698727446 * std::pow(kelvin - 60.0, -0.1332047592) / 255.0, 0.0, 1.0);
+
+    if (kelvin <= 66.0)
+        g = std::clamp((99.4708025861 * std::log(kelvin) - 161.1195681661) / 255.0, 0.0, 1.0);
+    else
+        g = std::clamp(288.1221695283 * std::pow(kelvin - 60.0, -0.0755148492) / 255.0, 0.0, 1.0);
+
+    if (kelvin >= 66.0) b = 1.0;
+    else if (kelvin <= 19.0) b = 0.0;
+    else b = std::clamp((138.5177312231 * std::log(kelvin - 10.0) - 305.0447927307) / 255.0, 0.0, 1.0);
+}
+
+static inline void generateGammaLUT(uint32_t colorTemperature,
+                                    qreal brightness,
+                                    size_t gammaSize,
+                                    QVector<uint16_t> &r,
+                                    QVector<uint16_t> &g,
+                                    QVector<uint16_t> &b)
+{
+    if (gammaSize == 0) {
+        return;
+    }
+
+    double cr, cg, cb;
+    kelvinToRGB(static_cast<double>(colorTemperature), cr, cg, cb);
+    for (size_t i = 0; i < gammaSize; ++i) {
+        double normalized = static_cast<double>(i) / static_cast<double>(gammaSize - 1);
+
+        double rValue = std::clamp(normalized * cr * brightness, 0.0, 1.0);
+        double gValue = std::clamp(normalized * cg * brightness, 0.0, 1.0);
+        double bValue = std::clamp(normalized * cb * brightness, 0.0, 1.0);
+        r[i] = static_cast<uint16_t>(std::round(rValue * 65535.0));
+        g[i] = static_cast<uint16_t>(std::round(gValue * 65535.0));
+        b[i] = static_cast<uint16_t>(std::round(bValue * 65535.0));
+    }
+}
+
+}
+
+// TODO: better Chromatic Adaptation algorithms can be implemented when the wlr_color_transform
+// api is available. For now RGB scaling is used due to limitation of gamma LUT table.
+// see: http://www.brucelindbloom.com/index.html?ChromAdaptEval.html
+void Output::setOutputColor(qreal brightness,
+                            uint32_t colorTemperature,
+                            std::function<void(bool)> resultCallback)
+{
+    if (brightness < 0)
+        brightness = config()->brightness();
+    if (colorTemperature == 0)
+        colorTemperature = config()->colorTemperature();
+
+    qreal brightnessCorrection = 1.0;
+
+    if (m_backlight) {
+        qreal backlightBrightness = m_backlight->setBrightness(brightness);
+        if (backlightBrightness != 0)
+            brightnessCorrection = qBound(0.0, brightness / backlightBrightness, 1.0);
+    } else {
+        brightnessCorrection = brightness;
+    }
+
+    const size_t gammaSize = output()->handle()->get_gamma_size();
+    if (gammaSize == 0) {
+        if (resultCallback)
+            resultCallback(false);
+        qCWarning(treelandOutput) << " Output " << output()->name()
+                             << " does not support gamma LUT! Brightness and color temperature adjustments through gamma will have no effect.";
+        return;
+    }
+
+    QVector<uint16_t> r(gammaSize);
+    QVector<uint16_t> g(gammaSize);
+    QVector<uint16_t> b(gammaSize);
+
+    generateGammaLUT(colorTemperature,
+                     brightnessCorrection,
+                     gammaSize,
+                     r,
+                     g,
+                     b);
+
+    WOutputHelper::ExtraState newState;
+    auto *viewport = screenViewport();
+    auto *renderWindow = screenViewport()->outputRenderWindow();
+    wlr_output_state_set_gamma_lut(newState.get(), gammaSize,
+                                   r.constData(),
+                                   g.constData(),
+                                   b.constData());
+
+    auto *outputHelper = renderWindow->getOutputHelper(viewport);
+    outputHelper->setExtraState(newState);
+
+    outputHelper->scheduleCommitJob([this, brightness, colorTemperature, newState, resultCallback](bool success, WOutputHelper::ExtraState state) {
+        if (state == newState) {
+            if (resultCallback)
+                resultCallback(success);
+            if (!success) {
+                qCWarning(treelandOutput) << "Failed to apply brightness and color temperature settings to output"
+                                          << output()->name();
+            } else {
+                config()->setBrightness(brightness);
+                config()->setColorTemperature(colorTemperature);
+            }
+        } else {
+            qCWarning(treelandOutput) << "Commit callback received unexpected state pointer!"
+                                      << "Expected:" << newState.get()
+                                      << "Got:" << state.get();
+        }
+    }, WOutputHelper::AfterCommitStage);
+    renderWindow->update(viewport);
 }
