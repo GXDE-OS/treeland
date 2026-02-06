@@ -3,64 +3,59 @@
 
 #include "helper.h"
 
-#include "modules/capture/capture.h"
-#include "utils/cmdline.h"
-#include "utils/fpsdisplaymanager.h"
-#include "modules/dde-shell/ddeshellattached.h"
-#include "modules/dde-shell/ddeshellmanagerinterfacev1.h"
-#include "input/inputdevice.h"
-#include "core/layersurfacecontainer.h"
-#include "greeter/usermodel.h"
 #ifdef EXT_SESSION_LOCK_V1
 #include "wsessionlock.h"
 #include "wsessionlockmanager.h"
+#include "core/lockscreen.h"
 #endif
-
-#include <rhi/qrhi.h>
-
-#if !defined(DISABLE_DDM) || defined(EXT_SESSION_LOCK_V1)
-#  include "core/lockscreen.h"
+#ifndef DISABLE_DDM
+#include "core/lockscreen.h"
 #endif
-#include "interfaces/multitaskviewinterface.h"
-#include "output/output.h"
-#include "output/outputconfigstate.h"
-#include "output/outputlifecyclemanager.h"
-#include "modules/output-manager/outputmanagement.h"
-#include "modules/personalization/personalizationmanager.h"
+#include "common/treelandlogging.h"
+#include "core/layersurfacecontainer.h"
 #include "core/qmlengine.h"
 #include "core/rootsurfacecontainer.h"
 #include "core/shellhandler.h"
+#include "core/treeland.h"
+#include "core/windowpicker.h"
+#include "greeter/usermodel.h"
+#include "input/inputdevice.h"
+#include "interfaces/multitaskviewinterface.h"
+#include "modules/app-id-resolver/appidresolver.h"
+#include "modules/capture/capture.h"
+#include "modules/dde-shell/ddeshellattached.h"
+#include "modules/dde-shell/ddeshellmanagerinterfacev1.h"
+#include "modules/ddm/ddminterfacev1.h"
+#include "modules/keystate/keystate.h"
+#include "modules/output-manager/outputmanagement.h"
+#include "modules/personalization/personalizationmanager.h"
+#include "modules/prelaunch-splash/prelaunchsplash.h"
+#include "modules/screensaver/screensaverinterfacev1.h"
+#include "modules/shortcut/shortcutcontroller.h"
+#include "modules/shortcut/shortcutmanager.h"
+#include "modules/shortcut/shortcutrunner.h"
+#include "modules/wallpaper-color/wallpapercolor.h"
+#include "output/outputconfigstate.h"
+#include "output/output.h"
+#include "output/outputlifecyclemanager.h"
+#include "session/session.h"
 #include "surface/surfacecontainer.h"
 #include "surface/surfacewrapper.h"
-#include "modules/wallpaper-color/wallpapercolor.h"
-#include "core/windowpicker.h"
-#include "workspace/workspace.h"
-#include "common/treelandlogging.h"
-#include "modules/ddm/ddminterfacev1.h"
 #include "treelandconfig.hpp"
 #include "treelanduserconfig.hpp"
-#include "core/treeland.h"
-#include "greeter/greeterproxy.h"
-#include "modules/screensaver/screensaverinterfacev1.h"
-#include "xsettings/settingmanager.h"
-#include "modules/shortcut/shortcutmanager.h"
-#include "modules/shortcut/shortcutcontroller.h"
-#include "modules/shortcut/shortcutrunner.h"
-#include "modules/prelaunch-splash/prelaunchsplash.h"
-#include "modules/app-id-resolver/appidresolver.h"
-#include "modules/keystate/keystate.h"
+#include "utils/cmdline.h"
+#include "utils/fpsdisplaymanager.h"
+#include "workspace/workspace.h"
 
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
 
 #include <WBackend>
-#include <WForeignToplevel>
-#include <WOutput>
-#include <WServer>
-#include <WSurfaceItem>
-#include <WXdgOutput>
 #include <wcursorshapemanagerv1.h>
+#include <wextimagecapturesourcev1impl.h>
+#include <WForeignToplevel>
 #include <wlayersurface.h>
+#include <WOutput>
 #include <woutputhelper.h>
 #include <woutputitem.h>
 #include <woutputlayout.h>
@@ -71,83 +66,69 @@
 #include <wquickcursor.h>
 #include <wrenderhelper.h>
 #include <wseat.h>
+#include <wsecuritycontextmanager.h>
+#include <WServer>
 #include <wsocket.h>
+#include <WSurfaceItem>
 #include <wtoplevelsurface.h>
+#include <WXdgOutput>
 #include <wxdgshell.h>
+#include <wxdgtoplevelsurface.h>
 #include <wxwayland.h>
 #include <wxwaylandsurface.h>
-#include <wxdgtoplevelsurface.h>
-#include <wextimagecapturesourcev1impl.h>
-#include <wsecuritycontextmanager.h>
 
 #include <qwallocator.h>
+#include <qwalphamodifierv1.h>
 #include <qwbackend.h>
 #include <qwbuffer.h>
 #include <qwcompositor.h>
 #include <qwdatacontrolv1.h>
 #include <qwdatadevice.h>
 #include <qwdisplay.h>
+#include <qwdrm.h>
 #include <qwextdatacontrolv1.h>
-#include <qwextimagecopycapturev1.h>
-#include <qwextimagecapturesourcev1.h>
 #include <qwextforeigntoplevelimagecapturesourcemanagerv1.h>
 #include <qwextforeigntoplevellistv1.h>
+#include <qwextimagecapturesourcev1.h>
+#include <qwextimagecopycapturev1.h>
 #include <qwfractionalscalemanagerv1.h>
 #include <qwgammacontorlv1.h>
+#include <qwidleinhibitv1.h>
+#include <qwidlenotifyv1.h>
+#include <qwinputdevice.h>
 #include <qwlayershellv1.h>
 #include <qwlogging.h>
 #include <qwoutput.h>
+#include <qwoutputpowermanagementv1.h>
 #include <qwrenderer.h>
 #include <qwscreencopyv1.h>
 #include <qwsession.h>
 #include <qwsubcompositor.h>
 #include <qwviewporter.h>
-#include <qwxwaylandsurface.h>
-#include <qwoutputpowermanagementv1.h>
-#include <qwidlenotifyv1.h>
-#include <qwidleinhibitv1.h>
-#include <qwalphamodifierv1.h>
-#include <qwdrm.h>
 #include <qwxwayland.h>
+#include <qwxwaylandsurface.h>
 
 #include <QAction>
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusObjectPath>
 #include <QKeySequence>
 #include <QLoggingCategory>
 #include <QMouseEvent>
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QtConcurrent>
-#include <QDBusConnection>
-#include <QDBusInterface>
-#include <QDBusObjectPath>
+#include <rhi/qrhi.h>
 
-#include <pwd.h>
-#include <utility>
 #include <functional>
 #include <linux/input.h>
+#include <pwd.h>
 #include <sys/ioctl.h>
+#include <utility>
 #include <wayland-util.h>
 
-#define WLR_FRACTIONAL_SCALE_V1_VERSION 1
 #define EXT_DATA_CONTROL_MANAGER_V1_VERSION 1
-#define _DEEPIN_NO_TITLEBAR "_DEEPIN_NO_TITLEBAR"
-
-static xcb_atom_t internAtom(xcb_connection_t *connection, const char *name, bool onlyIfExists)
-{
-    if (!name || *name == 0)
-        return XCB_NONE;
-
-    xcb_intern_atom_cookie_t cookie = xcb_intern_atom(connection, onlyIfExists, strlen(name), name);
-    xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(connection, cookie, 0);
-
-    if (!reply)
-        return XCB_NONE;
-
-    xcb_atom_t atom = reply->atom;
-    free(reply);
-
-    return atom;
-}
+#define WLR_FRACTIONAL_SCALE_V1_VERSION 1
 
 static QByteArray readWindowProperty(xcb_connection_t *connection,
                                      xcb_window_t win,
@@ -181,30 +162,11 @@ static QByteArray readWindowProperty(xcb_connection_t *connection,
     return data;
 }
 
-Session::~Session()
-{
-    qCDebug(treelandCore) << "Deleting session for uid:" << uid << socket;
-    Q_EMIT aboutToBeDestroyed();
-
-    if (settingManagerThread) {
-        settingManagerThread->quit();
-        settingManagerThread->wait(QDeadlineTimer(25000));
-    }
-
-    if (settingManager) {
-        delete settingManager;
-        settingManager = nullptr;
-    }
-    if (xwayland)
-        Helper::instance()->shellHandler()->removeXWayland(xwayland);
-    if (socket)
-        delete socket;
-}
-
 Helper *Helper::m_instance = nullptr;
 
 Helper::Helper(QObject *parent)
     : WSeatEventFilter(parent)
+    , m_sessionManager(new SessionManager(this))
     , m_renderWindow(new WOutputRenderWindow(this))
     , m_server(new WServer(this))
     , m_rootSurfaceContainer(new RootSurfaceContainer(m_renderWindow->contentItem()))
@@ -213,9 +175,9 @@ Helper::Helper(QObject *parent)
     m_instance = this;
 
     Q_ASSERT(!m_config);
-    m_config = TreelandUserConfig::createByName("org.deepin.dde.treeland.user",
+    m_config.reset(TreelandUserConfig::createByName("org.deepin.dde.treeland.user",
                                               "org.deepin.dde.treeland",
-                                              "/dde"); // will update user path in Helper::init
+                                              "/dde")); // will update user path in Helper::init
     m_globalConfig.reset(TreelandConfig::create("org.deepin.dde.treeland",
                                                       QString()));
 
@@ -280,19 +242,6 @@ Helper::Helper(QObject *parent)
 
 Helper::~Helper()
 {
-    for (auto session : std::as_const(m_sessions)) {
-        Q_ASSERT(session);
-        if (session->xwayland) {
-            delete session->xwayland;
-            session->xwayland = nullptr;
-        }
-        if (session->socket) {
-            delete session->socket;
-            session->socket = nullptr;
-        }
-    }
-    m_sessions.clear();
-
     for (auto s : m_rootSurfaceContainer->surfaces()) {
         m_rootSurfaceContainer->destroyForSurface(s);
     }
@@ -311,7 +260,7 @@ Helper *Helper::instance()
 
 TreelandUserConfig *Helper::config()
 {
-    return m_config;
+    return m_config.get();
 }
 
 TreelandConfig *Helper::globalConfig()
@@ -377,6 +326,11 @@ QmlEngine *Helper::qmlEngine() const
 WOutputRenderWindow *Helper::window() const
 {
     return m_renderWindow;
+}
+
+SessionManager *Helper::sessionManager() const
+{
+    return m_sessionManager;
 }
 
 ShellHandler *Helper::shellHandler() const
@@ -457,7 +411,9 @@ void Helper::onOutputAdded(WOutput *output)
         newState.set_adaptive_sync_enabled(settings.value("adaptiveSyncEnabled").toBool());
         newState.set_transform(static_cast<wl_output_transform>(settings.value("transform").toInt()));
         newState.set_scale(settings.value("scale").toFloat());
-        output->handle()->commit_state(newState);
+        if (!output->handle()->commit_state(newState)) {
+            qCCritical(treelandCore) << "commit failed on output" << output->name();
+        }
     }
     settings.endGroup();
 }
@@ -554,6 +510,7 @@ void Helper::setGamma(struct wlr_gamma_control_manager_v1_set_gamma_event *event
     qw_output_state newState;
     newState.set_gamma_lut(ramp_size, r, g, b);
     if (!qwOutput->commit_state(newState)) {
+        qCCritical(treelandCore, "commit failed on output  %s", qwOutput->handle()->name);
         qCWarning(treelandCore) << "Failed to set gamma lut!";
         // TODO: use software impl it.
         qw_gamma_control_v1::from(gamma_control)->send_failed_and_destroy();
@@ -865,14 +822,18 @@ void Helper::onSetOutputPowerMode(wlr_output_power_v1_set_mode_event *event)
             return;
         }
         newState.set_enabled(false);
-        output->commit_state(newState);
+        if (!output->commit_state(newState)) {
+            qCCritical(treelandCore, "commit failed on output %s", output->handle()->name);
+        }
         break;
     case ZWLR_OUTPUT_POWER_V1_MODE_ON:
         if (output->handle()->enabled) {
             return;
         }
         newState.set_enabled(true);
-        output->commit_state(newState);
+        if (!output->commit_state(newState)) {
+            qCCritical(treelandCore, "commit failed on output %s", output->handle()->name);
+        }
         break;
     }
 }
@@ -1052,7 +1013,8 @@ void Helper::onSurfaceWrapperAdded(SurfaceWrapper *wrapper)
     bool isXwayland = wrapper->type() == SurfaceWrapper::Type::XWayland;
     bool isLayer = wrapper->type() == SurfaceWrapper::Type::Layer;
 
-    connect(m_activeSession.lock().get(), &Session::aboutToBeDestroyed, wrapper, &SurfaceWrapper::requestClose);
+    connect(m_sessionManager->activeSession().lock().get(), &Session::aboutToBeDestroyed,
+            wrapper, &SurfaceWrapper::requestClose);
 
     if (isXdgToplevel || isXdgPopup || isLayer) {
         auto *attached =
@@ -1107,13 +1069,13 @@ void Helper::onSurfaceWrapperAdded(SurfaceWrapper *wrapper)
 
     if (isXwayland) {
         auto xwaylandSurface = qobject_cast<WXWaylandSurface *>(wrapper->shellSurface());
-        auto updateDecorationTitleBar = [this, wrapper, xwaylandSurface]() {
+        auto updateDecorationTitleBar = [wrapper, xwaylandSurface, sessionManager = m_sessionManager]() {
             auto *xwayland = xwaylandSurface->xwayland();
             xcb_connection_t *connection = xwayland ? xwayland->xcbConnection() : nullptr;
             xcb_atom_t atom;
             if (xwayland) {
-                if (auto session = sessionForXWayland(xwayland))
-                    atom = session->noTitlebarAtom;
+                if (auto session = sessionManager->sessionForXWayland(xwayland))
+                    atom = session->noTitlebarAtom();
                 else
                     atom = XCB_ATOM_NONE;
             } else {
@@ -1215,6 +1177,8 @@ void Helper::deleteTaskSwitch()
 void Helper::init(Treeland::Treeland *treeland)
 {
     m_treeland = treeland;
+    connect(m_sessionManager, &SessionManager::sessionChanged, treeland, &Treeland::Treeland::SessionChanged);
+
     auto engine = qmlEngine();
     m_userModel = engine->singletonInstance<UserModel *>("Treeland", "UserModel");
 
@@ -1325,9 +1289,9 @@ void Helper::init(Treeland::Treeland *treeland)
     m_personalization = m_server->attach<PersonalizationV1>();
 
     auto updateCurrentUser = [this] {
-        m_config = TreelandUserConfig::createByName("org.deepin.dde.treeland.user",
+        m_config.reset(TreelandUserConfig::createByName("org.deepin.dde.treeland.user",
                                                   "org.deepin.dde.treeland",
-                                                  "/" + m_userModel->currentUserName());
+                                                  "/" + m_userModel->currentUserName()));
         auto user = m_userModel->currentUser();
         m_personalization->setUserId(user ? user->UID() : getuid());
     };
@@ -1419,11 +1383,22 @@ void Helper::init(Treeland::Treeland *treeland)
     auto *xwaylandOutputManager =
         m_server->attach<WXdgOutputManager>(m_rootSurfaceContainer->outputLayout());
     xwaylandOutputManager->setScaleOverride(1.0);
-    xdgOutputManager->setFilter([this](WClient *client) { return !isXWaylandClient(client); });
-    xwaylandOutputManager->setFilter([this](WClient *client) { return isXWaylandClient(client); });
+
+    static const auto isXWaylandClient =
+        [sessionManager = QPointer(m_sessionManager)](WClient *client) {
+            if (sessionManager) {
+                for (auto session : sessionManager->sessions()) {
+                    if (session && session->xwayland() && session->xwayland()->waylandClient() == client)
+                        return true;
+                }
+            }
+        return false;
+       };
+    xdgOutputManager->setFilter([](WClient *client) { return !isXWaylandClient(client); });
+    xwaylandOutputManager->setFilter([](WClient *client) { return isXWaylandClient(client); });
     // User dde does not has a real Logind session, so just pass 0 as id
-    updateActiveUserSession(QStringLiteral("dde"), 0);
-    connect(m_userModel, &UserModel::userLoggedIn, this, &Helper::updateActiveUserSession);
+    m_sessionManager->updateActiveUserSession(QStringLiteral("dde"), 0);
+    connect(m_userModel, &UserModel::userLoggedIn, m_sessionManager, &SessionManager::updateActiveUserSession);
     m_xdgDecorationManager = m_server->attach<WXdgDecorationManager>();
     connect(m_xdgDecorationManager,
             &WXdgDecorationManager::surfaceModeChanged,
@@ -1509,24 +1484,21 @@ void Helper::init(Treeland::Treeland *treeland)
 
     m_server->attach<KeyStateV5>(m_seat);
 
+#if TREELANDCONFIG_DCONFIG_FILE_VERSION_MINOR > 0
+    if (m_globalConfig->isInitializeSucceeded()) {
+#else
+    if (m_globalConfig->isInitializeSucceed()) {
+#endif
+        configureNumlock();
+    } else {
+        connect(m_globalConfig.get(),
+                &TreelandConfig::configInitializeSucceed,
+                this,
+                &Helper::configureNumlock,
+                Qt::SingleShotConnection);
+    }
+
     m_backend->handle()->start();
-}
-
-bool Helper::socketEnabled() const
-{
-    auto ptr = m_activeSession.lock();
-    if (ptr && ptr->socket)
-        return ptr->socket->isEnabled();
-    return false;
-}
-
-void Helper::setSocketEnabled(bool newEnabled)
-{
-    auto ptr = m_activeSession.lock();
-    if (ptr && ptr->socket)
-        ptr->socket->setEnabled(newEnabled);
-    else
-        qCWarning(treelandCore) << "Can't set enabled for empty socket!";
 }
 
 void Helper::activateSurface(SurfaceWrapper *wrapper, Qt::FocusReason reason)
@@ -1586,7 +1558,7 @@ void Helper::forceActivateSurface(SurfaceWrapper *wrapper, Qt::FocusReason reaso
     Helper::instance()->activateSurface(wrapper, reason);
 }
 
-RootSurfaceContainer *Helper::rootContainer() const
+RootSurfaceContainer *Helper::rootSurfaceContainer() const
 {
     return m_rootSurfaceContainer;
 }
@@ -1994,7 +1966,7 @@ void Helper::onSessionNew(const QString &sessionId, const QDBusObjectPath &sessi
     const auto path = sessionPath.path();
     qCDebug(treelandCore) << "Session new, sessionId:" << sessionId << ", sessionPath:" << path;
     QDBusConnection::systemBus().connect("org.freedesktop.login1", path, "org.freedesktop.login1.Session", "Lock", this, SLOT(onSessionLock()));
-    QDBusConnection::systemBus().connect("org.freedesktop.login1", path, "org.freedesktop.login1.Session", "Unlock", this, SLOT(onSessionUnLock()));
+    QDBusConnection::systemBus().connect("org.freedesktop.login1", path, "org.freedesktop.login1.Session", "Unlock", this, SLOT(onSessionUnlock()));
 }
 
 void Helper::onSessionLock()
@@ -2026,7 +1998,7 @@ void Helper::onExtSessionLock(WSessionLock *lock)
     }
 
     deleteTaskSwitch();
-        
+
     setWorkspaceVisible(false);
 
     lock->safeConnect(&WSessionLock::abandoned, this, [this]() {
@@ -2055,8 +2027,10 @@ void Helper::allowNonDrmOutputAutoChangeMode(WOutput *output)
                         [this](wlr_output_event_request_state *newState) {
                             if (newState->state->committed & WLR_OUTPUT_STATE_MODE) {
                                 auto output = qobject_cast<qw_output *>(sender());
-
-                                output->commit_state(newState->state);
+                                if (!output->commit_state(newState->state)) {
+                                    qCCritical(treelandCore, "commit failed on output %s",
+                                               output->handle()->name);
+                                }
                             }
                         });
 }
@@ -2135,340 +2109,14 @@ Helper::OutputMode Helper::outputMode() const
 }
 
 /**
- * Add a WSocket to the Wayland server. 
+ * Add a WSocket to the Wayland server.
  * This function is used by Treeland::ActivateWayland.
- * 
+ *
  * @param socket WSocket to add
  */
 void Helper::addSocket(WSocket *socket)
 {
     m_server->addSocket(socket);
-}
-
-/**
- * Find the session for the given logind session id
- *
- * @param uid Session ID to find session for
- * @returns Session for the given id, or nullptr if not found
- */
-std::shared_ptr<Session> Helper::sessionForId(int id) const
-{
-    for (auto session : m_sessions) {
-        if (session && session->id == id)
-            return session;
-    }
-    return nullptr;
-}
-
-/**
- * Find the session for the given uid
- * 
- * @param uid User ID to find session for
- * @returns Session for the given uid, or nullptr if not found
- */
-std::shared_ptr<Session> Helper::sessionForUid(uid_t uid) const
-{
-    for (auto session : m_sessions) {
-        if (session && session->uid == uid)
-            return session;
-    }
-    return nullptr;
-}
-
-/**
- * Find the session for the given username
- * 
- * @param uid Username to find session for
- * @returns Session for the given username, or nullptr if not found
- */
-std::shared_ptr<Session> Helper::sessionForUser(const QString &username) const
-{
-    for (auto session : m_sessions) {
-        if (session && session->username == username)
-            return session;
-    }
-    return nullptr;
-}
-
-/**
- * Find the session for the given WXWayland
- * 
- * @param xwayland WXWayland to find session for
- * @returns Session for the given xwayland, or nullptr if not found
- */
-std::shared_ptr<Session> Helper::sessionForXWayland(WXWayland *xwayland) const
-{
-    for (auto session : m_sessions) {
-        if (session && session->xwayland == xwayland)
-            return session;
-    }
-    return nullptr;
-}
-
-/**
- * Find the session for the given WSocket
- * 
- * @param socket WSocket to find session for
- * @returns Session for the given socket, or nullptr if not found
- */
-std::shared_ptr<Session> Helper::sessionForSocket(WSocket *socket) const
-{
-    for (auto session : m_sessions) {
-        if (session && session->socket == socket)
-            return session;
-    }
-    return nullptr;
-}
-
-/**
- * Get the currently active session
- *
- * @returns weak_ptr to the active session
- */
-std::weak_ptr<Session> Helper::activeSession() const
-{
-    return m_activeSession;
-}
-
-/**
- * Remove a session from the session list
- *
- * @param session The session to remove
- */
-void Helper::removeSession(std::shared_ptr<Session> session)
-{
-    if (!session)
-        return;
-
-    if (m_activeSession.lock() == session) {
-        m_activeSession.reset();
-        m_activatedSurface = nullptr;
-        Q_EMIT activatedSurfaceChanged();
-    }
-
-    for (auto s : std::as_const(m_sessions)) {
-        if (s.get() == session.get()) {
-            m_sessions.removeOne(s);
-            break;
-        }
-    }
-
-    session.reset();
-}
-
-/**
- * Ensure a session exists for the given username, creating it if necessary
- * 
- * @param id An existing logind session ID
- * @param uid Username to ensure session for
- * @returns Session for the given username, or nullptr on failure
- */
-std::shared_ptr<Session> Helper::ensureSession(int id, QString username)
-{
-    // Helper lambda to create WSocket and WXWayland
-    auto createWSocket = [this]() {
-        // Create WSocket
-        auto socket = new WSocket(true, this);
-        if (!socket->autoCreate()) {
-            qCCritical(treelandCore) << "Failed to create Wayland socket";
-            delete socket;
-            return static_cast<WSocket *>(nullptr);
-        }
-        // Connect signals
-        connect(socket, &WSocket::fullServerNameChanged, this, [this] {
-            if (m_activeSession.lock())
-                Q_EMIT socketFileChanged();
-        });
-        // Add socket to server
-        m_server->addSocket(socket);
-        return socket;
-    };
-    auto createXWayland = [this](WSocket *socket) {
-        // Create xwayland
-        auto *xwayland = m_shellHandler->createXWayland(m_server, m_seat, m_compositor, false);
-        if (!xwayland) {
-            qCCritical(treelandCore) << "Failed to create XWayland instance";
-            return static_cast<WXWayland *>(nullptr);
-        }
-        // Bind xwayland to socket
-        xwayland->setOwnsSocket(socket);
-        // Connect signals
-        connect(xwayland, &WXWayland::ready, this, [this, xwayland] {
-            if (auto session = sessionForXWayland(xwayland)) {
-                session->noTitlebarAtom =
-                    internAtom(session->xwayland->xcbConnection(), _DEEPIN_NO_TITLEBAR, false);
-                if (!session->noTitlebarAtom) {
-                    qCWarning(treelandInput) << "Failed to intern atom:" << _DEEPIN_NO_TITLEBAR;
-                }
-                session->settingManager = new SettingManager(session->xwayland->xcbConnection(),
-                                                             session->xwayland);
-                session->settingManagerThread = new QThread(session->xwayland);
-
-                session->settingManager->moveToThread(session->settingManagerThread);
-                connect(session->settingManagerThread, &QThread::started, this, [this, session]{
-                    const qreal scale = m_rootSurfaceContainer->window()->effectiveDevicePixelRatio();
-                    QMetaObject::invokeMethod(session->settingManager, [session, scale]() {
-                            session->settingManager->setGlobalScale(scale);
-                            session->settingManager->apply();
-                        }, Qt::QueuedConnection);
-
-                    QObject::connect(Helper::instance()->window(),
-                        &WOutputRenderWindow::effectiveDevicePixelRatioChanged,
-                        session->settingManager,
-                        [session](qreal dpr) {
-                            session->settingManager->setGlobalScale(dpr);
-                            session->settingManager->apply();
-                        }, Qt::QueuedConnection);
-                });
-
-                connect(session->settingManagerThread, &QThread::finished, session->settingManagerThread, &QThread::deleteLater);
-                session->settingManagerThread->start();
-            }
-        });
-        return xwayland;
-    };
-    // Check if session already exists for user
-    if (auto session = sessionForUser(username)) {
-        // Ensure it has a socket and xwayland
-        if (!session->socket) {
-            auto *socket = createWSocket();
-            if (!socket) {
-                m_sessions.removeOne(session);
-                return nullptr;
-            }
-            session->socket = socket;
-        }
-        if (!session->xwayland) {
-            auto *xwayland = createXWayland(session->socket);
-            if (!xwayland) {
-                delete session->socket;
-                m_sessions.removeOne(session);
-                return nullptr;
-            }
-
-            session->xwayland = xwayland;
-        }
-
-        return session;
-    }
-    // Session does not exist, create new session with deleter
-    auto session = std::make_shared<Session>();
-    session->id = id;
-    session->username = username;
-    session->uid = getpwnam(username.toLocal8Bit().data())->pw_uid;
-
-    session->socket = createWSocket();
-    if (!session->socket) {
-        session.reset();
-        return nullptr;
-    }
-
-    session->xwayland = createXWayland(session->socket);
-    if (!session->xwayland) {
-        session.reset();
-        return nullptr;
-    }
-
-    // Add session to list
-    m_sessions.append(session);
-    return session;
-}
-
-/**
- * Get the WXWayland for the given uid
- * 
- * @param uid User ID to get WXWayland for
- * @returns WXWayland for the given uid, or nullptr if not found/created
- */
-WXWayland *Helper::xwaylandForUid(uid_t uid) const
-{
-    auto session = sessionForUid(uid);
-    return session ? session->xwayland : nullptr;
-}
-
-/**
- * Get the WSocket for the given uid
- * 
- * @param uid User ID to get WSocket for
- * @returns WSocket for the given uid, or nullptr if not found/created
- */
-WSocket *Helper::waylandSocketForUid(uid_t uid) const
-{
-    auto session = sessionForUid(uid);
-    return session ? session->socket : nullptr;
-}
-
-/** 
- * Get the global WSocket, which is not relative with any session and
- * always available.
- * 
- * @returns The global WSocket, or nullptr if it's not created yet.
- */
-WSocket *Helper::globalWaylandSocket() const
-{
-    return waylandSocketForUid(getpwnam("dde")->pw_uid);
-}
-
-/**
- * Get the global WXWayland, which is not relative with any session and
- * always available.
- * 
- * @returns The global WXWayland, or nullptr if none active
- */
-WXWayland *Helper::globalXWayland() const
-{
-    return xwaylandForUid(getpwnam("dde")->pw_uid);
-}
-
-/**
- * Update the active session to the given uid, creating it if necessary.
- * This will update XWayland visibility and emit socketFileChanged if the
- * active session changed.
- * 
- * @param username Username to set as active session
- */
-void Helper::updateActiveUserSession(const QString &username, int id)
-{
-    // Get previous active session
-    auto previous = m_activeSession.lock();
-    // Get new session for uid, creating if necessary
-    auto session = ensureSession(id, username);
-    if (!session) {
-        qCWarning(treelandInput) << "Failed to ensure session for user" << username;
-        return;
-    }
-    if (previous != session) {
-        // Update active session
-        m_activeSession = session;
-        // Clear activated surface
-        setActivatedSurface(nullptr);
-        Q_EMIT activatedSurfaceChanged();
-        // Emit signal and update socket enabled state
-        if (previous && previous->socket)
-            previous->socket->setEnabled(false);
-        session->socket->setEnabled(true);
-        Q_EMIT socketFileChanged();
-        // Notify session changed through DBus, treeland-sd will listen it to update envs
-        Q_EMIT m_treeland->SessionChanged();
-    }
-    qCInfo(treelandCore) << "Listing on:" << session->socket->fullServerName();
-}
-
-/**
- * Check if the given WClient belongs to any XWayland session.
- * This is used in setFilter function for output managers.
- * 
- * @param client WClient to check
- * @returns true if the client is an XWayland client, false otherwise
- */
-bool Helper::isXWaylandClient(WClient *client)
-{
-    for (auto session : m_sessions) {
-        if (session && session->xwayland && session->xwayland->waylandClient() == client) {
-            return true;
-        }
-    }
-    return false;
 }
 
 PersonalizationV1 *Helper::personalization() const
@@ -2480,7 +2128,7 @@ bool Helper::toggleDebugMenuBar()
 {
     bool ok = false;
 
-    const auto outputs = rootContainer()->outputs();
+    const auto outputs = rootSurfaceContainer()->outputs();
     if (outputs.isEmpty())
         return false;
 
@@ -2537,11 +2185,6 @@ void Helper::handleWindowPicker(WindowPickerInterface *picker)
                 windowPicker,
                 &WindowPicker::deleteLater);
     });
-}
-
-RootSurfaceContainer *Helper::rootSurfaceContainer() const
-{
-    return m_rootSurfaceContainer;
 }
 
 void Helper::setMultitaskViewImpl(IMultitaskView *impl)
@@ -2879,4 +2522,75 @@ void Helper::restoreCopyMode()
 
     const auto &allSurfaces = getWorkspaceSurfaces();
     applyCopyModeToOutputs(primaryOutput, allSurfaces);
+}
+
+static void setNumlockForDevice(WInputDevice *device) {
+    if (!device || device->type() != WInputDevice::Type::Keyboard)
+        return;
+
+    auto keyboard = qobject_cast<qw_keyboard *>(device->handle());
+    if (!keyboard)
+        return;
+    auto wlrKeyboard = keyboard->handle();
+    if (!wlrKeyboard || !wlrKeyboard->keymap || !wlrKeyboard->xkb_state)
+        return;
+    xkb_mod_index_t numlock = xkb_keymap_mod_get_index(wlrKeyboard->keymap, XKB_MOD_NAME_NUM);
+    if (numlock == XKB_MOD_INVALID)
+        return;
+    xkb_state_update_mask(wlrKeyboard->xkb_state, 0, 0, (1u << numlock), 0, 0, 0);
+    wlr_keyboard_led_update(wlrKeyboard, wlrKeyboard->leds | WLR_LED_NUM_LOCK);
+}
+
+void Helper::configureNumlock() {
+    if (!m_globalConfig->numlock())
+        return;
+    connect(m_backend, &WBackend::inputAdded, this, setNumlockForDevice);
+    const auto inputDevices = m_backend->inputDeviceList();
+    for (WInputDevice *device : inputDevices) {
+        setNumlockForDevice(device);
+    }
+}
+
+/**
+ * Move a XWayland window's surface corresponding to wid, to a
+ * position relative to a WSurface. Top-left point is always used.
+ *
+ * @param wid X Window ID for the XWayland surface
+ * @param anchor The anchor WSurface to be relative to
+ * @param dx Horizontal distance between the top-left point of anchor and the destination
+ * @param dy Vertical distance between the top-left point of anchor and the destination
+ */
+bool Helper::setXWindowPositionRelative(uint wid, WSurface *anchor, wl_fixed_t dx, wl_fixed_t dy) const
+{
+    SurfaceWrapper *ach = m_rootSurfaceContainer->getSurface(anchor);
+    if (!ach) {
+        qCWarning(treelandCore) << "setXWindowPositionRelative: Failed to get SurfaceWrapper from WSurface";
+        return false;
+    }
+
+    SurfaceWrapper *target = nullptr;
+    for (SurfaceWrapper *wrapper : std::as_const(rootSurfaceContainer()->surfaces())) {
+        if (wrapper->type() == SurfaceWrapper::Type::XWayland) {
+            wlr_xwayland_surface *surface =
+                wlr_xwayland_surface_try_from_wlr_surface(wrapper->surface()->handle()->handle());
+            if (surface && surface->window_id == static_cast<xcb_window_t>(wid)) {
+                target = wrapper;
+                break;
+            }
+        }
+    }
+    if (!target) {
+        qCWarning(treelandCore) << "setXWindowPositionRelative: XWayland surface corresponding to WID" << wid << "not found!";
+        return false;
+    }
+
+    QRectF rect(ach->position(), target->size());
+    rect.translate(wl_fixed_to_double(dx), wl_fixed_to_double(dy));
+    target->setPosition(rect.topLeft());
+    return true;
+}
+
+WXWayland *Helper::createXWayland()
+{
+    return shellHandler()->createXWayland(m_server, m_seat, m_compositor, false);
 }

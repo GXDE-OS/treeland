@@ -5,6 +5,8 @@
 #include "surfacewrapper.h"
 
 #include "seat/helper.h"
+#include "treeland-personalization-manager-protocol.h"
+#include "common/treelandlogging.h"
 #include "treelanduserconfig.hpp"
 #include "modules/personalization/impl/appearance_impl.h"
 #include "modules/personalization/impl/font_impl.h"
@@ -30,6 +32,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 
+#include <optional>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -47,6 +50,38 @@ static QString defaultBackground()
         return QFile::exists(configDefaultBg) ? configDefaultBg : DEFAULT_WALLPAPER;
     }();
     return defaultBg;
+}
+
+// TODO(rewine)： https://github.com/linuxdeepin/treeland/issues/715
+static std::optional<int32_t> protocolWindowThemeTypeToDConfig(uint32_t type)
+{
+    switch (type) {
+    case TREELAND_PERSONALIZATION_APPEARANCE_CONTEXT_V1_THEME_TYPE_LIGHT:
+        return 1;
+    case TREELAND_PERSONALIZATION_APPEARANCE_CONTEXT_V1_THEME_TYPE_DARK:
+        return 2;
+    case TREELAND_PERSONALIZATION_APPEARANCE_CONTEXT_V1_THEME_TYPE_AUTO:
+        qCCritical(treelandConfig)
+            << "Protocol window theme type AUTO is not supported by dconfig.";
+        return std::nullopt;
+    default:
+        qCWarning(treelandConfig) << "Unknown protocol window theme type:" << type;
+        return std::nullopt;
+    }
+}
+
+static uint32_t dconfigWindowThemeTypeToProtocol(int32_t type)
+{
+    switch (type) {
+    case 1:
+        return TREELAND_PERSONALIZATION_APPEARANCE_CONTEXT_V1_THEME_TYPE_LIGHT;
+    case 2:
+        return TREELAND_PERSONALIZATION_APPEARANCE_CONTEXT_V1_THEME_TYPE_DARK;
+    default:
+        qCWarning(treelandConfig)
+            << "Unknown dconfig windowThemeType:" << type << ", fallback to light.";
+        return TREELAND_PERSONALIZATION_APPEARANCE_CONTEXT_V1_THEME_TYPE_LIGHT;
+    }
 }
 
 void PersonalizationV1::updateCacheWallpaperPath(uid_t uid)
@@ -73,7 +108,6 @@ QString PersonalizationV1::readWallpaperSettings(const QString &group,
 
 PersonalizationV1::PersonalizationV1(QObject *parent)
     : QObject(parent)
-    , m_dconfig(DConfig::create("org.deepin.treeland", "org.deepin.treeland", QString()))
 {
     if (PERSONALIZATION_MANAGER) {
         qFatal("There are multiple instances of QuickPersonalizationManager");
@@ -185,7 +219,10 @@ void PersonalizationV1::onAppearanceContextCreated(personalization_appearance_co
         }
     });
     connect(context, &Appearance::windowThemeTypeChanged, this, [this](int32_t type) {
-        Helper::instance()->config()->setWindowThemeType(type);
+        const auto dconfigType = protocolWindowThemeTypeToDConfig(static_cast<uint32_t>(type));
+        if (dconfigType.has_value()) {
+            Helper::instance()->config()->setWindowThemeType(*dconfigType);
+        }
         for (auto *context : m_appearanceContexts) {
             context->sendWindowThemeType(type);
         }
@@ -214,7 +251,9 @@ void PersonalizationV1::onAppearanceContextCreated(personalization_appearance_co
     });
 
     connect(context, &Appearance::requestWindowThemeType, context, [context] {
-        context->setWindowThemeType(Helper::instance()->config()->windowThemeType());
+        const auto protocolType = dconfigWindowThemeTypeToProtocol(
+            Helper::instance()->config()->windowThemeType());
+        context->setWindowThemeType(protocolType);
     });
 
     connect(context, &Appearance::requestWindowTitlebarHeight, context, [context] {
@@ -236,7 +275,8 @@ void PersonalizationV1::onAppearanceContextCreated(personalization_appearance_co
     context->setIconTheme(Helper::instance()->config()->iconThemeName().toUtf8());
     context->setActiveColor(Helper::instance()->config()->activeColor().toUtf8());
     context->setWindowOpacity(Helper::instance()->config()->windowOpacity());
-    context->setWindowThemeType(Helper::instance()->config()->windowThemeType());
+    context->setWindowThemeType(dconfigWindowThemeTypeToProtocol(
+        Helper::instance()->config()->windowThemeType()));
     context->setWindowTitlebarHeight(Helper::instance()->config()->windowTitlebarHeight());
 
     context->blockSignals(false);
@@ -420,12 +460,12 @@ void PersonalizationV1::setCursorSize(const QSize &size)
 
 int32_t PersonalizationV1::windowRadius() const
 {
-    return m_dconfig->value("windowRadius", 18).toInt();
+    return Helper::instance()->config()->windowRadius();
 }
 
 QString PersonalizationV1::iconTheme() const
 {
-    return m_dconfig->value("iconThemeName", 18).toString();
+    return Helper::instance()->config()->iconThemeName();
 }
 
 QString PersonalizationV1::background(const QString &output, int workspaceId)

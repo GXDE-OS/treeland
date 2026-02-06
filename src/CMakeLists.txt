@@ -17,7 +17,9 @@ endif()
 find_package(QT NAMES Qt6 COMPONENTS Core REQUIRED)
 find_package(Qt6 CONFIG REQUIRED ShaderTools Concurrent)
 find_package(Qt6 COMPONENTS Quick QuickControls2 REQUIRED)
-find_package(Qt6 COMPONENTS QuickPrivate QUIET)
+if(Qt6_VERSION VERSION_GREATER_EQUAL 6.10)
+    find_package(Qt6 REQUIRED COMPONENTS QuickPrivate)
+endif()
 pkg_search_module(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
 pkg_search_module(WAYLAND REQUIRED IMPORTED_TARGET wayland-server)
 pkg_search_module(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
@@ -86,6 +88,13 @@ dtk_add_config_to_cpp(
     CLASS_NAME "OutputConfig"
 )
 
+dtk_add_config_to_cpp(
+    APP_CONFIG
+    "${PROJECT_SOURCE_DIR}/misc/dconfig/org.deepin.dde.treeland.app.json"
+    OUTPUT_FILE_NAME "appconfig.hpp"
+    CLASS_NAME "AppConfig"
+)
+
 qt_add_library(libtreeland SHARED)
 
 set_target_properties(libtreeland PROPERTIES
@@ -104,6 +113,7 @@ qt_add_qml_module(libtreeland
         ${TREELAND_CONFIG}
         ${TREELAND_USER_CONFIG}
         ${OUTPUT_CONFIG}
+        ${APP_CONFIG}
         common/treelandlogging.cpp
         common/treelandlogging.h
         core/layersurfacecontainer.cpp
@@ -120,7 +130,8 @@ qt_add_qml_module(libtreeland
         core/treeland.h
         core/windowpicker.cpp
         core/windowpicker.h
-        core/windowsizestore.h
+        core/windowconfigstore.cpp
+        core/windowconfigstore.h
         effects/tquickradiuseffect.cpp
         effects/tquickradiuseffect.h
         effects/tquickradiuseffect_p.h
@@ -157,6 +168,8 @@ qt_add_qml_module(libtreeland
         output/outputlifecyclemanager.h
         seat/helper.cpp
         seat/helper.h
+        session/session.cpp
+        session/session.h
         surface/surfacecontainer.cpp
         surface/surfacecontainer.h
         surface/surfacefilterproxymodel.cpp
@@ -294,6 +307,7 @@ target_include_directories(libtreeland
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/interfaces>
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/output>
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/seat>
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/session>
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/surface>
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/workspace>
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/utils>

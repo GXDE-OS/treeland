@@ -149,7 +149,7 @@ Output::Output(WOutputItem *output, QObject *parent)
     // TODO: Investigate better ways to track the panel specific persistent settings.
     // The connector name of the panel may change.
     QString outputName = output->output()->name();
-    m_config = OutputConfig::createByName("org.deepin.dde.treeland.outputs",
+    m_config = OutputConfig::createByName("org.deepin.dde.treeland.output",
                                     "org.deepin.dde.treeland",
                                     "/" + outputName, this);
 }
@@ -380,8 +380,9 @@ void Output::enable()
             newState.set_scale(preferredScaleFactor(output()->size()));
         }
         newState.set_enabled(true);
-        bool ok = qwoutput->commit_state(newState);
-        Q_ASSERT(ok);
+        if (!qwoutput->commit_state(newState)) {
+            qCCritical(treelandCore, "commit failed on output %s", qwoutput->handle()->name);
+        }
     }
 }
 

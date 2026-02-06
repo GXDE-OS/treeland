@@ -554,7 +554,7 @@ public:
 
     RenderingFlags flags() const override
     {
-        return QSGRenderNode::NoExternalRendering | QSGRenderNode::BoundedRectRendering;
+        return NoExternalRendering | BoundedRectRendering | DepthAwareRendering | OpaqueRendering;
     }
 
     QPointer<WSurfaceItemContent> m_owner;
@@ -986,6 +986,7 @@ void WSurfaceItem::releaseResources()
     } else {
         for (auto item : std::as_const(d->subsurfaces))
             item->deleteLater();
+        d->subsurfaces.clear();
     }
 
     if (auto content = d->getItemContent())

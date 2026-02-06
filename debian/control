@@ -39,6 +39,7 @@ Build-Depends: cmake (>= 3.4~),
                libaudit-dev,
                golang-github-msteinert-pam-dev,
                libjemalloc-dev,
+               libmpv-dev,
 Standards-Version: 4.6.0
 Section: dde
 Homepage: https://github.com/linuxdeepin/treeland.git
@@ -89,3 +90,11 @@ Architecture: all
 Depends: ${misc:Depends},
          treeland (= ${source:Version}),
 Description: treeland user session files of treeland.
+
+Package: treeland-wallpaper-factory
+Section: dde
+Architecture: any
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         treeland (= ${source:Version}),
+Description: Treeland wallpaper factory client.

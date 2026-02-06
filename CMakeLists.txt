@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25.0)
 
 project(Treeland
-    VERSION 0.8.1
+    VERSION 0.8.2
     LANGUAGES CXX C)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -116,6 +116,7 @@ add_subdirectory(src)
 add_subdirectory(tools)
 add_subdirectory(misc)
 add_subdirectory(tests)
+add_subdirectory(wallpaper-factory)
 
 if (BUILD_TREELAND_EXAMPLES)
     add_subdirectory(examples)
