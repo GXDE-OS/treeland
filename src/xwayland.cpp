@@ -92,9 +92,9 @@ int main(int argc, char *argv[])
     for (int i = 0; i < argc; ++i) {
         args[i] = argv[i];
     }
-    args[argc] = const_cast<char *>("-auth");
+    /*args[argc] = const_cast<char *>("-auth");
     args[argc + 1] = const_cast<char *>(fileName);
-    args[argc + 2] = nullptr;
+    args[argc + 2] = nullptr;*/
     execvp("Xwayland", args);
     qWarning() << "execvp() returned";
     return 1;
