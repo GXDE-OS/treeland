@@ -1,6 +1,9 @@
 // Copyright (C) 2023 Dingyuan Zhang <lxz@mkacg.com>.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
+#include "modules/foreign-toplevel/foreigntoplevelmanagerv1.h"
+
+#include "common/treelandlogging.h"
 #include "core/rootsurfacecontainer.h"
 #include "seat/helper.h"
 #include "surface/surfacewrapper.h"
@@ -15,7 +18,6 @@
 #include <qwdisplay.h>
 #include <qwoutput.h>
 #include <qwxdgshell.h>
-#include "common/treelandlogging.h"
 
 static ForeignToplevelV1 *FOREIGN_TOPLEVEL_MANAGER = nullptr;
 
@@ -46,9 +48,6 @@ wl_global *ForeignToplevelV1::global() const
 
 void ForeignToplevelV1::addSurface(SurfaceWrapper *wrapper)
 {
-    Q_ASSERT(wrapper->type() == SurfaceWrapper::Type::XdgToplevel
-             || wrapper->type() == SurfaceWrapper::Type::XWayland);
-
     if (m_surfaces.contains(wrapper)) {
         qCCritical(treelandProtocol)
             << wrapper << " has been add to foreign toplevel twice";
@@ -57,9 +56,51 @@ void ForeignToplevelV1::addSurface(SurfaceWrapper *wrapper)
 
     auto handle = treeland_foreign_toplevel_handle_v1::create(m_manager);
     m_surfaces.insert({ wrapper, std::unique_ptr<treeland_foreign_toplevel_handle_v1>(handle) });
+    handle->set_identifier(m_nextIdentifier++);
+
+    // Splash supports requestClose immediately; it does not need to wait for
+    // initializeToplevelHandle() (which is only used after conversion to normal toplevel).
+
+    connect(handle, &treeland_foreign_toplevel_handle_v1::requestClose, wrapper, [wrapper]() {
+        wrapper->close();
+    });
+
+    if (wrapper->type() == SurfaceWrapper::Type::SplashScreen) {
+        handle->set_title(QStringLiteral("SplashScreen: ") + wrapper->appId());
+        handle->set_app_id(wrapper->appId());
+        handle->set_minimized(false);
+        handle->set_maximized(false);
+        handle->set_fullscreen(false);
+        handle->set_activated(false);
+
+        // Monitor surfaceItemCreated to complete initialization when splash converts to normal
+        // window
+        connect(wrapper, &SurfaceWrapper::surfaceItemCreated, handle, [this, wrapper, handle]() {
+            initializeToplevelHandle(wrapper, handle);
+        });
+        return;
+    }
+
+    initializeToplevelHandle(wrapper, handle);
+}
+
+void ForeignToplevelV1::initializeToplevelHandle(SurfaceWrapper *wrapper,
+                                                 treeland_foreign_toplevel_handle_v1 *handle)
+{
+    Q_ASSERT(wrapper->type() == SurfaceWrapper::Type::XdgToplevel
+             || wrapper->type() == SurfaceWrapper::Type::XWayland);
     auto surface = wrapper->shellSurface();
+    qCInfo(treelandProtocol) << "Register surface to ForeignToplevelV1, appId=" << wrapper->appId()
+                             << wrapper->type() << wrapper->skipDockPreView();
 
     // initSurface
+    handle->set_title(surface->title());
+    handle->set_app_id(wrapper->appId());
+    handle->set_minimized(surface->isMinimized());
+    handle->set_maximized(surface->isMaximized());
+    handle->set_fullscreen(surface->isFullScreen());
+    handle->set_activated(surface->isActivated());
+
     surface->safeConnect(&WToplevelSurface::titleChanged, handle, [handle, surface] {
         handle->set_title(surface->title());
     });
@@ -135,9 +176,6 @@ void ForeignToplevelV1::addSurface(SurfaceWrapper *wrapper)
                     wrapper->requestCancelFullscreen();
             });
 
-    connect(handle, &treeland_foreign_toplevel_handle_v1::requestClose, surface, [surface] {
-        surface->close();
-    });
     connect(handle,
             &treeland_foreign_toplevel_handle_v1::rectangleChanged,
             wrapper,
@@ -206,21 +244,12 @@ void ForeignToplevelV1::addSurface(SurfaceWrapper *wrapper)
             << "TreelandForeignToplevelManager only support WXdgSurface or "
                "WXWaylandSurface";
     }
-
-    handle->set_identifier(
-        *reinterpret_cast<const uint32_t *>(surface->surface()->handle()->handle()));
-
-    handle->set_title(surface->title());
-    handle->set_app_id(wrapper->appId());
-    handle->set_minimized(surface->isMinimized());
-    handle->set_maximized(surface->isMaximized());
-    handle->set_fullscreen(surface->isFullScreen());
-    handle->set_activated(surface->isActivated());
 }
 
 void ForeignToplevelV1::removeSurface(SurfaceWrapper *wrapper)
 {
     if (!m_surfaces.count(wrapper)) {
+        qCCritical(treelandProtocol) << wrapper << " is not registered in foreign toplevel";
         return;
     }
     m_surfaces.erase(wrapper);

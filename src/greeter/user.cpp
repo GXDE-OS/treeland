@@ -1,5 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
-//
+// Copyright (C) 2023-2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "user.h"
@@ -11,7 +10,7 @@
 
 struct UserPrivate
 {
-    bool logined{ false };
+    bool loggedIn{ false };
     bool noPasswdLogin{ false };
     quint64 uid{ 0 };
     quint64 gid{ 0 };
@@ -115,14 +114,14 @@ const QLocale &User::locale() const noexcept
     return d->locale;
 }
 
-bool User::logined() const noexcept
+bool User::loggedIn() const noexcept
 {
-    return d->logined;
+    return d->loggedIn;
 }
 
-void User::setLogined(bool newState) const noexcept
+void User::setLoggedIn(bool newState) const noexcept
 {
-    d->logined = newState;
+    d->loggedIn = newState;
 }
 
 void User::updateLimitTime(const QString &time) noexcept

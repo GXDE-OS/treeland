@@ -1,7 +1,10 @@
-// Copyright (C) 2024 UnionTech Software Technology Co., Ltd.
+// Copyright (C) 2024-2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #pragma once
+
+#include "modules/foreign-toplevel/foreigntoplevelmanagerv1.h"
+
 #include <wglobal.h>
 
 #include <qwglobal.h>
@@ -11,6 +14,8 @@
 #include <QObject>
 #include <QPointer>
 #include <QSet>
+
+#include <utility>
 
 Q_MOC_INCLUDE("workspace/workspace.h")
 
@@ -26,6 +31,7 @@ class Workspace;
 class SurfaceContainer;
 class PopupSurfaceContainer;
 class QmlEngine;
+class ForeignToplevelV1;
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 class WServer;
@@ -48,11 +54,14 @@ class qw_compositor;
 QW_END_NAMESPACE
 
 QT_BEGIN_NAMESPACE
+class QQuickItem;
 class QQuickWindow;
 QT_END_NAMESPACE
 
 class AppIdResolverManager; // forward declare new protocol manager
 class WindowConfigStore;    // forward declare config store
+class TreelandWallpaperShellInterfaceV1;
+class TreelandWallpaperSurfaceInterfaceV1;
 
 class ShellHandler : public QObject
 {
@@ -60,12 +69,14 @@ class ShellHandler : public QObject
     Q_OBJECT
 
 public:
-    explicit ShellHandler(RootSurfaceContainer *rootContainer);
+    explicit ShellHandler(RootSurfaceContainer *rootContainer,
+                          WAYLIB_SERVER_NAMESPACE::WServer *server);
     [[nodiscard]] Workspace *workspace() const;
 
-    void createComponent(QmlEngine *engine);
+    void createComponent(QmlEngine *engine, QQuickItem *parentItem);
     void initXdgShell(WAYLIB_SERVER_NAMESPACE::WServer *server);
     void initLayerShell(WAYLIB_SERVER_NAMESPACE::WServer *server);
+    void initWallpaperShell(WAYLIB_SERVER_NAMESPACE::WServer *server);
     [[nodiscard]] WAYLIB_SERVER_NAMESPACE::WXWayland *createXWayland(
         WAYLIB_SERVER_NAMESPACE::WServer *server,
         WAYLIB_SERVER_NAMESPACE::WSeat *seat,
@@ -77,6 +88,11 @@ public:
                                WAYLIB_SERVER_NAMESPACE::WSeat *seat);
 
     WAYLIB_SERVER_NAMESPACE::WXWayland *defaultXWaylandSocket() const;
+    void setupDockPreview(QObject *dockPreview);
+
+    TreelandWallpaperShellInterfaceV1 *wallpaperShell() const {
+        return m_wallpaperShell;
+    }
 Q_SIGNALS:
     void surfaceWrapperAdded(SurfaceWrapper *wrapper);
     void surfaceWrapperAboutToRemove(SurfaceWrapper *wrapper);
@@ -94,20 +110,36 @@ private Q_SLOTS:
     void onLayerSurfaceRemoved(WAYLIB_SERVER_NAMESPACE::WLayerSurface *surface);
 
     void onInputPopupSurfaceV2Added(WAYLIB_SERVER_NAMESPACE::WInputPopupSurface *surface);
+
+    void onDockPreview(std::vector<SurfaceWrapper *> surfaces,
+                       WAYLIB_SERVER_NAMESPACE::WSurface *target,
+                       QPoint pos,
+                       ForeignToplevelV1::PreviewDirection direction);
+    void onDockPreviewTooltip(QString tooltip,
+                              WAYLIB_SERVER_NAMESPACE::WSurface *target,
+                              QPoint pos,
+                              ForeignToplevelV1::PreviewDirection direction);
+
+    void setupDockPreview();
     void onInputPopupSurfaceV2Removed(WAYLIB_SERVER_NAMESPACE::WInputPopupSurface *surface);
 
 private:
     void setupSurfaceActiveWatcher(SurfaceWrapper *wrapper);
     void setupSurfaceWindowMenu(SurfaceWrapper *wrapper);
     void updateLayerSurfaceContainer(SurfaceWrapper *surface);
+    void registerSurfaceToForeignToplevel(SurfaceWrapper *wrapper);
     void handleDdeShellSurfaceAdded(WAYLIB_SERVER_NAMESPACE::WSurface *surface,
                                     SurfaceWrapper *wrapper);
     void setResourceManagerAtom(WAYLIB_SERVER_NAMESPACE::WXWayland *xwayland,
                                 const QByteArray &value);
     // Prelaunch splash related: creates a prelaunch SurfaceWrapper when
     // PrelaunchSplash::splashRequested
-    void handlePrelaunchSplashRequested(const QString &appId, QW_NAMESPACE::qw_buffer *iconBuffer);
+    void handlePrelaunchSplashRequested(const QString &appId,
+                                       const QString &instanceId,
+                                       QW_NAMESPACE::qw_buffer *iconBuffer);
+    void handlePrelaunchSplashClosed(const QString &appId, const QString &instanceId);
     void createPrelaunchSplash(const QString &appId,
+                               const QString &instanceId,
                                QW_NAMESPACE::qw_buffer *iconBuffer,
                                const QSize &lastSize,
                                const QString &darkPalette,
@@ -115,22 +147,22 @@ private:
                                qlonglong splashThemeType);
 
     // --- helpers (internal) ---
-    SurfaceWrapper *matchOrCreateXdgWrapper(WAYLIB_SERVER_NAMESPACE::WXdgToplevelSurface *surface,
-                                            const QString &appId);
-    void initXdgWrapperCommon(WAYLIB_SERVER_NAMESPACE::WXdgToplevelSurface *surface,
-                              SurfaceWrapper *wrapper);
-    SurfaceWrapper *matchOrCreateXwaylandWrapper(WAYLIB_SERVER_NAMESPACE::WXWaylandSurface *surface,
-                                                 const QString &appId);
-    void initXwaylandWrapperCommon(WAYLIB_SERVER_NAMESPACE::WXWaylandSurface *surface,
-                                   SurfaceWrapper *wrapper);
+    // Creates or matches a wrapper from prelaunch splash, then initializes it
+    void ensureXdgWrapper(WAYLIB_SERVER_NAMESPACE::WXdgToplevelSurface *surface,
+                          const QString &appId);
+    // Creates or matches a wrapper from prelaunch splash, then initializes it
+    void ensureXwaylandWrapper(WAYLIB_SERVER_NAMESPACE::WXWaylandSurface *surface,
+                               const QString &appId);
     // Unified parent/container update for Xdg & XWayland toplevel wrappers.
     void updateWrapperContainer(SurfaceWrapper *wrapper,
                                 WAYLIB_SERVER_NAMESPACE::WSurface *parentSurface);
 
     WAYLIB_SERVER_NAMESPACE::WXdgShell *m_xdgShell = nullptr;
     WAYLIB_SERVER_NAMESPACE::WLayerShell *m_layerShell = nullptr;
+    TreelandWallpaperShellInterfaceV1 *m_wallpaperShell = nullptr;
     WAYLIB_SERVER_NAMESPACE::WInputMethodHelper *m_inputMethodHelper = nullptr;
     QList<WAYLIB_SERVER_NAMESPACE::WXWayland *> m_xwaylands;
+    ForeignToplevelV1 *m_treelandForeignToplevel = nullptr;
 
     QPointer<RootSurfaceContainer> m_rootSurfaceContainer;
     LayerSurfaceContainer *m_backgroundContainer = nullptr;
@@ -146,6 +178,10 @@ private:
     QList<SurfaceWrapper *> m_prelaunchWrappers;
     // Prelaunch requests waiting for dconfig initialization
     QSet<QString> m_pendingPrelaunchAppIds;
+    // AppIds of closed splash screens, used to close matching real windows
+    QSet<QString> m_closedSplashAppIds;
+    // Dock preview QML object
+    QObject *m_dockPreview = nullptr;
     // Pending toplevel surfaces (XDG or XWayland) awaiting async AppId resolve; callbacks continue
     // only if the pointer remains in this list
     QList<WAYLIB_SERVER_NAMESPACE::WToplevelSurface *> m_pendingAppIdResolveToplevels;

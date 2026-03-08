@@ -61,8 +61,12 @@ private Q_SLOTS:
     void onDockPreviewContextCreated(treeland_dock_preview_context_v1 *context);
 
 private:
+    void initializeToplevelHandle(SurfaceWrapper *wrapper,
+                                  treeland_foreign_toplevel_handle_v1 *handle);
+
     treeland_foreign_toplevel_manager_v1 *m_manager = nullptr;
     std::map<SurfaceWrapper *, std::unique_ptr<treeland_foreign_toplevel_handle_v1>> m_surfaces;
+    uint32_t m_nextIdentifier = 1;
 };
 
 Q_DECLARE_OPAQUE_POINTER(treeland_foreign_toplevel_handle_v1_maximized_event *);

@@ -103,6 +103,10 @@ public:
             it->second->deleteLater();
             pluginTs.erase(it++);
         }
+        // UserModel must be deleted before Helper, to remove client surfaces before rendering ends.
+        delete qmlEngine->singletonInstance<UserModel *>("Treeland", "UserModel");
+        // Helper must be deleted before QmlEngine, for surfaces to be cleanly removed.
+        qmlEngine->clearSingletons();
     }
 
 #ifndef DISABLE_DDM
@@ -436,7 +440,8 @@ bool Treeland::ActivateWayland(QDBusUnixFileDescriptor _fd)
         u->setWaylandSocket(socket);
     }
 
-    socket->setEnabled(userModel->currentUserName() == user);
+    socket->setEnabled(userModel->currentUserName() == user,
+                       Helper::instance()->sessionManager()->globalSession()->socket());
 
     d->helper->addSocket(socket.get());
 
@@ -490,6 +495,7 @@ void Treeland::quit()
     // make sure all deleted before app exit
     d_ptr.reset();
     qApp->quit();
+    // TODO: release drm master and return tty to text mode
 }
 
 } // namespace Treeland

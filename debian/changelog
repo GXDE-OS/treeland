@@ -1,3 +1,52 @@
+treeland (0.8.5) unstable; urgency=medium
+
+  * fix: correct CMake config name for submodule build
+  * fix: qw_buffer metatype handling for Clang builds
+  * chore: add org.freedesktop.ScreenSaver test for test_idle_inhibit_v1
+  * fix: add wl_display_flush for treeland_screensaver request
+  * chore: update translations for project TreeLand
+  * fix: fix renaming of treeland_screensaver_v1 protocol
+  * feat: add treeland-wallpaper-factory as recommended dependency
+  * fix: fix wallpaper scaling and clipping issues
+  * feat: improve prelaunch splash screen layout and styling
+  * feat(examples): add idle inhibit v1 test client
+  * fix: suppress unused parameter warnings in WallpaperLauncher
+  * fix: fix dconfig initialization check compatibility
+  * feat: implement wallpaper switching with smooth transitions
+  * fix: prevent crash by delaying output assignment until surface
+    mapped
+  * feat: implement wallpaper management system
+
+ -- rewine <luhongxu@uniontech.com>  Fri, 06 Mar 2026 09:44:57 +0800
+
+treeland (0.8.4) unstable; urgency=medium
+
+  * refactor: optimize PrelaunchSplash animation and destruction logic
+  * feat: add prelaunch splash v2 protocol support
+  * fix: fix cannot unlock session after crash recovery
+  * fix: memory leak in prelaunch splash
+  * feat: listen to the Lock/Unlock signal of
+    org.freedesktop.login1.Session
+  * chore: clean up the logic of greeter and lockscreen
+  * fix: WBufferRenderer missing disconnect during QQuickItem destructor
+  * refactor: move dock preview management to ShellHandler
+  * feat: make splash screens visible and closable via foreign-toplevel
+    protocol
+  * feat: implement video slow down and playback control
+  * feat: enhance wallpaper setting with file type detection
+  * fix: prevent crash when updateActiveState called on uninitialized
+    shell surface
+  * fix: keybinding to quit treeland
+  * fix: Treeland destruction timing
+  * fix: SessionManager: correct destruction routine of WXWayland
+    instances
+  * fix: qwlroots: expose qw_xwayland::destroy()
+  * fix: waylib: release renderers before scene graph invalidation
+  * fix: fix splash screen activation and keyboard focus handling
+  * feat: improve splash screen active state handling
+
+ -- rewine <luhongxu@uniontech.com>  Sat, 28 Feb 2026 14:03:33 +0800
+
 treeland (0.8.3gxde1) UNRELEASED; urgency=medium
 
   * 修复在 GXDE 下运行 X11 应用无权限的问题

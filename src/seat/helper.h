@@ -1,14 +1,16 @@
-// Copyright (C) 2024 UnionTech Software Technology Co., Ltd.
+// Copyright (C) 2024-2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #pragma once
 
-#include "modules/foreign-toplevel/foreigntoplevelmanagerv1.h"
 #include "core/qmlengine.h"
 #include "modules/shortcut/shortcutmanager.h"
 #include "modules/virtual-output/virtualoutputmanager.h"
 #include "modules/window-management/windowmanagement.h"
 #include "utils/fpsdisplaymanager.h"
+#include "modules/wallpaper/wallpapermanagerinterfacev1.h"
+#include "modules/wallpaper/wallpapernotifierinterfacev1.h"
+#include "wallpaper/wallpaperconfig.h"
 
 #include <wglobal.h>
 #include <wqmlcreator.h>
@@ -85,6 +87,7 @@ class DDEShellManagerInterfaceV1;
 class DDMInterfaceV1;
 class ForeignToplevelV1;
 class FpsDisplayManager;
+class GreeterProxy;
 class ILockScreen;
 class IMultitaskView;
 class LockScreen;
@@ -100,6 +103,7 @@ class RootSurfaceContainer;
 class ScreensaverInterfaceV1;
 class SessionManager;
 class SettingManager;
+class SessionModel;
 class ShellHandler;
 class ShortcutManagerV2;
 class ShortcutRunner;
@@ -113,6 +117,8 @@ class VirtualOutputV1;
 class WallpaperColorV1;
 class WindowManagementV1;
 class WindowPickerInterface;
+class WallpaperManager;
+class WallpaperItem;
 
 struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request;
 struct wlr_idle_inhibitor_v1;
@@ -183,7 +189,6 @@ public:
 
     void addSocket(WSocket *socket);
     [[nodiscard]] WXWayland *createXWayland();
-    void removeXWayland(WXWayland *xwayland);
 
     PersonalizationV1 *personalization() const;
 
@@ -194,6 +199,11 @@ public:
     WindowManagementV1::DesktopState showDesktopState() const;
 
     Q_INVOKABLE bool isLaunchpad(WLayerSurface *surface) const;
+    Q_INVOKABLE void setLaunchpadMapped(WOutput *output, bool mapped);
+    Q_INVOKABLE void showDesktop(WOutput *output);
+    Q_INVOKABLE void startLockscreen(WOutput *output, bool showAnimation);
+    Q_INVOKABLE QString currentWorkspaceWallpaper(WOutput *output);
+    Q_INVOKABLE QString currentLockScreenWallpaper(WOutput *output);
 
     void handleWindowPicker(WindowPickerInterface *picker);
 
@@ -211,7 +221,8 @@ public:
 
     Output* getOutputAtCursor() const;
 
-    UserModel *userModel() const;
+    inline UserModel *userModel() const { return m_userModel; };
+    inline SessionModel *sessionModel() const { return m_sessionModel; };
     DDMInterfaceV1 *ddmInterfaceV1() const;
 
     void activateSession();
@@ -228,6 +239,7 @@ public:
 
     bool setXWindowPositionRelative(uint wid, WSurface *anchor, wl_fixed_t dx, wl_fixed_t dy) const;
 
+    bool isDDMDisplay() const { return m_isDDMDisplay; }
 public Q_SLOTS:
     void activateSurface(SurfaceWrapper *wrapper, Qt::FocusReason reason = Qt::OtherFocusReason);
     void forceActivateSurface(SurfaceWrapper *wrapper,
@@ -247,6 +259,11 @@ Q_SIGNALS:
 
     void blockActivateSurfaceChanged();
     void requestQuit();
+    void updateWallpaper();
+
+    void launchpadMappedChanged(WOutput *output, bool mapped);
+    void showDesktopRequested(WOutput *output);
+    void startLockscreened(WOutput *output, bool showAnimation);
 
 private Q_SLOTS:
     void onShowDesktop();
@@ -264,14 +281,6 @@ private:
     void onOutputTestOrApply(qw_output_configuration_v1 *config, bool onlyTest);
     void onSetOutputPowerMode(wlr_output_power_v1_set_mode_event *event);
     void onNewIdleInhibitor(wlr_idle_inhibitor_v1 *inhibitor);
-    void onDockPreview(std::vector<SurfaceWrapper *> surfaces,
-                       WSurface *target,
-                       QPoint pos,
-                       ForeignToplevelV1::PreviewDirection direction);
-    void onDockPreviewTooltip(QString tooltip,
-                              WSurface *target,
-                              QPoint pos,
-                              ForeignToplevelV1::PreviewDirection direction);
     void onSetCopyOutput(treeland_virtual_output_v1 *virtual_output);
     void onRestoreCopyOutput(treeland_virtual_output_v1 *virtual_output);
     void onSurfaceWrapperAdded(SurfaceWrapper *wrapper);
@@ -280,8 +289,11 @@ private:
     void handleLockScreen(LockScreenInterface *lockScreen);
     void handleNewForeignToplevelCaptureRequest(wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request *request);
     void onExtSessionLock(WSessionLock *lock);
-
 private:
+    friend class SessionManager;
+    friend class WallpaperManager;
+    friend class WallpaperItem;
+
     void allowNonDrmOutputAutoChangeMode(WOutput *output);
     int indexOfOutput(WOutput *output) const;
 
@@ -325,6 +337,7 @@ private:
     Treeland::Treeland *m_treeland = nullptr;
     FpsDisplayManager *m_fpsManager = nullptr;
     SessionManager *m_sessionManager = nullptr;
+    WallpaperManager *m_wallpaperManager = nullptr;
 
     CurrentMode m_currentMode{ CurrentMode::Normal };
 
@@ -353,7 +366,6 @@ private:
     WXdgDecorationManager *m_xdgDecorationManager = nullptr;
     WForeignToplevel *m_foreignToplevel = nullptr;
     WExtForeignToplevelListV1 *m_extForeignToplevelListV1 = nullptr;
-    ForeignToplevelV1 *m_treelandForeignToplevel = nullptr;
     ShortcutManagerV2 *m_shortcutManager = nullptr;
     PersonalizationV1 *m_personalization = nullptr;
     WallpaperColorV1 *m_wallpaperColorV1 = nullptr;
@@ -366,6 +378,8 @@ private:
     OutputManagerV1 *m_outputManagerV1 = nullptr;
     DDMInterfaceV1 *m_ddmInterfaceV1 = nullptr;
     ScreensaverInterfaceV1 *m_screensaverInterfaceV1 = nullptr;
+    TreelandWallpaperManagerInterfaceV1 *m_wallpaperManagerInterfaceV1 = nullptr;
+    TreelandWallpaperNotifierInterfaceV1 *m_wallpaperNotifierInterfaceV1 = nullptr;
 #ifdef EXT_SESSION_LOCK_V1
     WSessionLockManager *m_sessionLockManager = nullptr;
     QTimer *m_lockScreenGraceTimer = nullptr;
@@ -392,10 +406,13 @@ private:
 
     IMultitaskView *m_multitaskView{ nullptr };
     UserModel *m_userModel{ nullptr };
+    SessionModel *m_sessionModel{ nullptr };
+    GreeterProxy *m_greeterProxy{ nullptr };
 
     bool m_blockActivateSurface{ false };
 
     bool m_noAnimation{ false };
+    bool m_isDDMDisplay{ false };
 
     struct PendingOutputConfig {
         qw_output_configuration_v1 *config = nullptr;

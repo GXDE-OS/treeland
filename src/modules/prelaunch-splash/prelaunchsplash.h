@@ -1,15 +1,16 @@
-// Copyright (C) 2025 UnionTech Software Technology Co., Ltd.
+// Copyright (C) 2025-2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #pragma once
 
-#include <QObject>
-
 #include <wayland-server-core.h>
 #include <wserver.h>
 #include <qwbuffer.h>
-
 #include <memory>
+
+#include <QObject>
+
+Q_MOC_INCLUDE(<qwbuffer.h>)
 
 WAYLIB_SERVER_USE_NAMESPACE
 QW_USE_NAMESPACE
@@ -22,7 +23,6 @@ QW_BEGIN_NAMESPACE
 class qw_display;
 class qw_buffer;
 QW_END_NAMESPACE
-Q_DECLARE_OPAQUE_POINTER(QW_NAMESPACE::qw_buffer*)
 
 class PrelaunchSplashPrivate;
 struct wl_global;
@@ -37,7 +37,10 @@ public:
     ~PrelaunchSplash() override;
 
 Q_SIGNALS:
-    void splashRequested(const QString &appId, QW_NAMESPACE::qw_buffer *iconBuffer);
+    void splashRequested(const QString &appId,
+                         const QString &instanceId,
+                         QW_NAMESPACE::qw_buffer *iconBuffer);
+    void splashCloseRequested(const QString &appId, const QString &instanceId);
 
 protected: // WServerInterface
     void create(WAYLIB_SERVER_NAMESPACE::WServer *server) override;
@@ -48,3 +51,5 @@ protected: // WServerInterface
 private:
     std::unique_ptr<PrelaunchSplashPrivate> d;
 };
+
+Q_DECLARE_OPAQUE_POINTER(QW_NAMESPACE::qw_buffer*)
