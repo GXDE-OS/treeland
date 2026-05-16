@@ -178,7 +178,6 @@ OutputItem {
 
                 anchors.fill: parent
                 disableUpdate: true
-                wallpaperRole: Wallpaper.Desktop
                 output: rootOutputItem.output
                 workspace: Helper.workspace.current
                 opacity: 0
@@ -191,6 +190,7 @@ OutputItem {
                     backWallpaper.live = true
                     backWallpaper.z = 1
                     backWallpaper.opacity = 1
+                    backWallpaper.forceUpdateSource = true
 
                     fontWallpaper.disableUpdate = false
                     fontWallpaper.z = 0
@@ -209,7 +209,6 @@ OutputItem {
                 id: fontWallpaper
 
                 anchors.fill: parent
-                wallpaperRole: Wallpaper.Desktop
                 output: rootOutputItem.output
                 workspace: Helper.workspace.current
                 z: 1
@@ -220,6 +219,7 @@ OutputItem {
                     fontWallpaper.live = true
                     fontWallpaper.z = 1
                     fontWallpaper.opacity = 1
+                    fontWallpaper.forceUpdateSource = true
 
                     backWallpaper.disableUpdate = false
                     backWallpaper.live = false

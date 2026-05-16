@@ -1,4 +1,4 @@
-// Copyright (C) 2024 UnionTech Software Technology Co., Ltd.
+// Copyright (C) 2024-2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "surfaceproxy.h"
@@ -11,6 +11,14 @@
 SurfaceProxy::SurfaceProxy(QQuickItem *parent)
     : QQuickItem(parent)
 {
+}
+
+SurfaceProxy::~SurfaceProxy()
+{
+    if (m_proxySurface) {
+        m_proxySurface->markWrapperToRemoved();
+        m_proxySurface = nullptr;
+    }
 }
 
 SurfaceWrapper *SurfaceProxy::surface() const
@@ -30,7 +38,7 @@ void SurfaceProxy::setSurface(SurfaceWrapper *newSurface)
 
     m_sourceSurface = newSurface;
     if (m_proxySurface) {
-        m_proxySurface->deleteLater();
+        m_proxySurface->markWrapperToRemoved();
         m_proxySurface = nullptr;
     }
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 JiDe Zhang <zhangjide@deepin.org>.
+// Copyright (C) 2023-2026 JiDe Zhang <zhangjide@deepin.org>.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "wsocket.h"
@@ -146,6 +146,7 @@ public:
     void restore();
 
     void addClient(WClient *client);
+    void doRemoveClient(WClient *client);
 
     W_DECLARE_PUBLIC(WSocket)
 
@@ -174,20 +175,25 @@ struct Q_DECL_HIDDEN WlClientDestroyListener {
         : client(client)
     {
         destroy.notify = handle_destroy;
+        destroy_late.notify = handle_destroy_late;
     }
 
     ~WlClientDestroyListener();
 
     static WlClientDestroyListener *get(const wl_client *client);
+    static WlClientDestroyListener *get_late(const wl_client *client);
     static void handle_destroy(struct wl_listener *listener, void *);
+    static void handle_destroy_late(struct wl_listener *listener, void *);
 
     wl_listener destroy;
+    wl_listener destroy_late;
     QPointer<WClient> client;
 };
 
 WlClientDestroyListener::~WlClientDestroyListener()
 {
     wl_list_remove(&destroy.link);
+    wl_list_remove(&destroy_late.link);
 }
 
 WlClientDestroyListener *WlClientDestroyListener::get(const wl_client *client)
@@ -199,6 +205,18 @@ WlClientDestroyListener *WlClientDestroyListener::get(const wl_client *client)
     }
 
     WlClientDestroyListener *tmp = wl_container_of(listener, tmp, destroy);
+    return tmp;
+}
+
+WlClientDestroyListener *WlClientDestroyListener::get_late(const wl_client *client)
+{
+    wl_listener *listener = wl_client_get_destroy_listener(const_cast<wl_client*>(client),
+                                                           WlClientDestroyListener::handle_destroy_late);
+    if (!listener) {
+        return nullptr;
+    }
+
+    WlClientDestroyListener *tmp = wl_container_of(listener, tmp, destroy_late);
     return tmp;
 }
 
@@ -259,6 +277,7 @@ public:
     {
         auto listener = new WlClientDestroyListener(qq);
         wl_client_add_destroy_listener(handle, &listener->destroy);
+        wl_client_add_destroy_late_listener(handle, &listener->destroy_late);
     }
 
     ~WClientPrivate() {
@@ -267,6 +286,8 @@ public:
 
         if (handle) {
             auto listener = WlClientDestroyListener::get(handle);
+            if (!listener)
+                listener = WlClientDestroyListener::get_late(handle);
             Q_ASSERT(listener);
             delete listener;
         }
@@ -286,11 +307,22 @@ void WlClientDestroyListener::handle_destroy(wl_listener *listener, void *data)
     WlClientDestroyListener *self = wl_container_of(listener, self, destroy);
     if (self->client && self->client->handle()) {
         Q_ASSERT(reinterpret_cast<wl_client*>(data) == self->client->handle());
-        self->client->d_func()->handle = nullptr;
-        auto socket = self->client->socket();
+        auto client = self->client.data();
+        auto socket = client->socket();
         Q_ASSERT(socket);
-        bool ok = socket->removeClient(self->client);
-        Q_ASSERT(ok);
+        // Remove from list without emitting Qt signals to avoid event loop reentrancy.
+        // WClient deletion is still deferred to handle_destroy_late until resources are destroyed.
+        WSocketPrivate *socketPrivate = WSocketPrivate::get(socket);
+        socketPrivate->clients.removeOne(client);
+        client->d_func()->handle = nullptr;
+    }
+}
+
+void WlClientDestroyListener::handle_destroy_late(wl_listener *listener, [[maybe_unused]] void *data)
+{
+    WlClientDestroyListener *self = wl_container_of(listener, self, destroy_late);
+    if (self->client) {
+        delete self->client.data();
     }
 
     delete self;
@@ -468,10 +500,11 @@ void WSocket::close()
     }
 
     if (!d->clients.isEmpty()) {
-        for (auto client : std::as_const(d->clients))
-            removeClient(client);
+        QList<WClient*> clientsToClose;
+        std::swap(clientsToClose, d->clients);
+        for (auto client : std::as_const(clientsToClose))
+            d->doRemoveClient(client);
 
-        d->clients.clear();
         Q_EMIT clientsChanged();
     }
 }
@@ -740,6 +773,23 @@ WClient *WSocket::addClient(wl_client *client, bool isWlClientOwned)
     return wclient;
 }
 
+void WSocketPrivate::doRemoveClient(WClient *client)
+{
+    W_Q(WSocket);
+
+    Q_EMIT q->aboutToBeDestroyedClient(client);
+
+    auto handle = client->handle();
+    if (handle && client->d_func()->isWlClientOwned) {
+        // Set handle to nullptr to prevent handle_destroy from calling removeClient again
+        client->d_func()->handle = nullptr;
+        delete client;
+        wl_client_destroy(handle);
+    } else {
+        delete client;
+    }
+}
+
 bool WSocket::removeClient(wl_client *client)
 {
     if (auto c = WClient::get(client))
@@ -751,20 +801,11 @@ bool WSocket::removeClient(WClient *client)
 {
     W_D(WSocket);
 
-    bool ok = d->clients.removeOne(client);
-    if (!ok)
+    if (!d->clients.removeOne(client))
         return false;
 
-    Q_EMIT aboutToBeDestroyedClient(client);
+    d->doRemoveClient(client);
 
-    auto handle = client->handle();
-    if (handle && client->d_func()->isWlClientOwned) {
-        // Set handle to nullptr to prevent handle_destroy from calling removeClient again
-        client->d_func()->handle = nullptr;
-        wl_client_destroy(handle);
-    }
-
-    delete client;
     Q_EMIT clientsChanged();
 
     return true;

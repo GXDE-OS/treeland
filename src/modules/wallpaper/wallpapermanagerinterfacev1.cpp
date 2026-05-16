@@ -43,17 +43,17 @@ public:
 
     TreelandWallpaperManagerInterfaceV1 *q = nullptr;
 protected:
-    void treeland_wallpaper_manager_v1_destroy_global() override;
-    void treeland_wallpaper_manager_v1_destroy(Resource *resource) override;
-    void treeland_wallpaper_manager_v1_get_treeland_wallpaper(Resource *resource,
-                                                              uint32_t id,
-                                                              struct ::wl_resource *output,
-                                                              struct ::wl_resource *surface) override;
+    void destroy(Resource *resource) override;
+    void get_treeland_wallpaper(Resource *resource,
+                                uint32_t id,
+                                struct ::wl_resource *output,
+                                struct ::wl_resource *surface) override;
 
 };
 
 TreelandWallpaperManagerInterfaceV1Private::TreelandWallpaperManagerInterfaceV1Private(TreelandWallpaperManagerInterfaceV1 *_q)
-    : q(_q)
+    : QtWaylandServer::treeland_wallpaper_manager_v1()
+    , q(_q)
 {
 }
 
@@ -62,20 +62,15 @@ wl_global *TreelandWallpaperManagerInterfaceV1Private::global() const
     return m_global;
 }
 
-void TreelandWallpaperManagerInterfaceV1Private::treeland_wallpaper_manager_v1_destroy_global()
-{
-    delete q;
-}
-
-void TreelandWallpaperManagerInterfaceV1Private::treeland_wallpaper_manager_v1_destroy(Resource *resource)
+void TreelandWallpaperManagerInterfaceV1Private::destroy(Resource *resource)
 {
     wl_resource_destroy(resource->handle);
 }
 
-void TreelandWallpaperManagerInterfaceV1Private::treeland_wallpaper_manager_v1_get_treeland_wallpaper(Resource *resource,
-                                                                                                      uint32_t id,
-                                                                                                      struct ::wl_resource *output,
-                                                                                                      struct ::wl_resource *surface)
+void TreelandWallpaperManagerInterfaceV1Private::get_treeland_wallpaper(Resource *resource,
+                                                                        uint32_t id,
+                                                                        struct ::wl_resource *output,
+                                                                        struct ::wl_resource *surface)
 {
     if (!output) {
         wl_resource_post_error(resource->handle, 0, "output resource is NULL!");
@@ -117,7 +112,7 @@ void TreelandWallpaperManagerInterfaceV1::create(WServer *server)
 
 void TreelandWallpaperManagerInterfaceV1::destroy([[maybe_unused]] WServer *server)
 {
-    d = nullptr;
+    d->globalRemove();
 }
 
 wl_global *TreelandWallpaperManagerInterfaceV1::global() const
@@ -146,11 +141,10 @@ public:
     wl_resource *refSurfaceResource = nullptr;
 
 protected:
-    void treeland_wallpaper_v1_bind_resource(Resource *resource) override;
-    void treeland_wallpaper_v1_destroy_resource(Resource *resource) override;
-    void treeland_wallpaper_v1_destroy(Resource *resource) override;
-    void treeland_wallpaper_v1_set_image_source(Resource *resource, const QString &fileSource, uint32_t nativeRole) override;
-    void treeland_wallpaper_v1_set_video_source(Resource *resource, const QString &fileSource, uint32_t nativeRole) override;
+    void destroy_resource(Resource *resource) override;
+    void destroy(Resource *resource) override;
+    void set_image_source(Resource *resource, const QString &fileSource, uint32_t nativeRole) override;
+    void set_video_source(Resource *resource, const QString &fileSource, uint32_t nativeRole) override;
 };
 
 TreelandWallpaperInterfaceV1Private::TreelandWallpaperInterfaceV1Private(TreelandWallpaperInterfaceV1 *_q,
@@ -167,24 +161,19 @@ TreelandWallpaperInterfaceV1Private::TreelandWallpaperInterfaceV1Private(Treelan
 {
 }
 
-void TreelandWallpaperInterfaceV1Private::treeland_wallpaper_v1_bind_resource([[maybe_unused]] Resource *resource)
-{
-    Q_EMIT q->binded();
-}
-
-void TreelandWallpaperInterfaceV1Private::treeland_wallpaper_v1_destroy_resource([[maybe_unused]] Resource *resource)
+void TreelandWallpaperInterfaceV1Private::destroy_resource([[maybe_unused]] Resource *resource)
 {
     delete q;
 }
 
-void TreelandWallpaperInterfaceV1Private::treeland_wallpaper_v1_destroy(Resource *resource)
+void TreelandWallpaperInterfaceV1Private::destroy(Resource *resource)
 {
     wl_resource_destroy(resource->handle);
 }
 
-void TreelandWallpaperInterfaceV1Private::treeland_wallpaper_v1_set_image_source([[maybe_unused]] Resource *resource,
-                                                                                 const QString &fileSource,
-                                                                                 uint32_t nativeRole)
+void TreelandWallpaperInterfaceV1Private::set_image_source([[maybe_unused]] Resource *resource,
+                                                           const QString &fileSource,
+                                                           uint32_t nativeRole)
 {
     TreelandWallpaperInterfaceV1::WallpaperRoles roles =
         static_cast<TreelandWallpaperInterfaceV1::WallpaperRoles>(nativeRole);
@@ -193,9 +182,9 @@ void TreelandWallpaperInterfaceV1Private::treeland_wallpaper_v1_set_image_source
     Q_EMIT q->imageSourceChanged(workspace->currentIndex(), fileSource, roles);
 }
 
-void TreelandWallpaperInterfaceV1Private::treeland_wallpaper_v1_set_video_source([[maybe_unused]] Resource *resource,
-                                                                                 const QString &fileSource,
-                                                                                 uint32_t nativeRole)
+void TreelandWallpaperInterfaceV1Private::set_video_source([[maybe_unused]] Resource *resource,
+                                                           const QString &fileSource,
+                                                           uint32_t nativeRole)
 {
     TreelandWallpaperInterfaceV1::WallpaperRoles roles =
         static_cast<TreelandWallpaperInterfaceV1::WallpaperRoles>(nativeRole);

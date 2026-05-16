@@ -1,4 +1,4 @@
-// Copyright (C) 2025 April Lu <apr3vau@outlook.com>.
+// Copyright (C) 2025-2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "ddminterfacev1.h"
@@ -10,6 +10,9 @@
 #include <wayland-server-core.h>
 #include <wayland-server.h>
 #include <wayland-util.h>
+
+#include <qwdisplay.h>
+
 #include <QDebug>
 
 struct treeland_ddm {
@@ -53,6 +56,12 @@ static void disableRender(struct wl_client *client, [[maybe_unused]] struct wl_r
     wl_resource_destroy(callback);
 }
 
+static void destroy([[maybe_unused]] struct wl_client *client,
+                       struct wl_resource *resource)
+{
+    wl_resource_destroy(resource);
+}
+
 static const struct treeland_ddm_v1_interface treeland_ddm_impl {
     .switch_to_greeter = switchToGreeter,
     .switch_to_user = switchToUser,
@@ -60,6 +69,7 @@ static const struct treeland_ddm_v1_interface treeland_ddm_impl {
     .deactivate_session = deactivateSession,
     .enable_render = enableRender,
     .disable_render = disableRender,
+    .destroy = destroy,
 };
 
 // wayland object binding

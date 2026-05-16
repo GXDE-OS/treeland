@@ -5,12 +5,11 @@
 
 #include "core/qmlengine.h"
 #include "modules/shortcut/shortcutmanager.h"
-#include "modules/virtual-output/virtualoutputmanager.h"
-#include "modules/window-management/windowmanagement.h"
+#include "modules/virtual-output/virtualoutputmanagerinterfacev1.h"
+#include "modules/window-management/windowmanagementinterfacev1.h"
 #include "utils/fpsdisplaymanager.h"
 #include "modules/wallpaper/wallpapermanagerinterfacev1.h"
 #include "modules/wallpaper/wallpapernotifierinterfacev1.h"
-#include "wallpaper/wallpaperconfig.h"
 
 #include <wglobal.h>
 #include <wqmlcreator.h>
@@ -22,7 +21,10 @@
 #include <xcb/xproto.h>
 
 #include <QList>
+#include <QMap>
 #include <optional>
+
+class QJsonObject;
 
 Q_MOC_INCLUDE(<QDBusObjectPath>)
 Q_MOC_INCLUDE(<qwgammacontorlv1.h>)
@@ -65,7 +67,16 @@ class WSurfaceItem;
 class WToplevelSurface;
 class WXdgDecorationManager;
 class WXWayland;
+
+class WForeignToplevel;
+class WExtForeignToplevelListV1;
+class WOutputManagerV1;
+class WLayerSurface;
+class WSessionLockManager;
+class WSessionLock;
 WAYLIB_SERVER_END_NAMESPACE
+
+class SeatsManager;
 
 QW_BEGIN_NAMESPACE
 class qw_allocator;
@@ -97,8 +108,7 @@ class Output;
 class OutputConfigState;
 class OutputLifecycleManager;
 class OutputManagerV1;
-class PersonalizationV1;
-class PrelaunchSplash;
+class PersonalizationManagerInterfaceV1;
 class RootSurfaceContainer;
 class ScreensaverInterfaceV1;
 class SessionManager;
@@ -113,9 +123,9 @@ class TreelandConfig;
 class TreelandUserConfig;
 class treeland_window_picker_v1;
 class UserModel;
-class VirtualOutputV1;
-class WallpaperColorV1;
-class WindowManagementV1;
+class VirtualOutputManagerInterfaceV1;
+class WallpaperColorInterfaceV1;
+class WindowManagementInterfaceV1;
 class WindowPickerInterface;
 class WallpaperManager;
 class WallpaperItem;
@@ -142,6 +152,7 @@ class Helper : public WSeatEventFilter
     Q_PROPERTY(TreelandConfig* globalConfig READ globalConfig CONSTANT FINAL)
     Q_PROPERTY(bool blockActivateSurface READ blockActivateSurface WRITE setBlockActivateSurface NOTIFY blockActivateSurfaceChanged FINAL)
     Q_PROPERTY(bool noAnimation READ noAnimation WRITE setNoAnimation NOTIFY noAnimationChanged FINAL)
+    Q_PROPERTY(RootSurfaceContainer* rootContainer READ rootContainer CONSTANT FINAL)
     QML_ELEMENT
     QML_SINGLETON
 
@@ -190,13 +201,11 @@ public:
     void addSocket(WSocket *socket);
     [[nodiscard]] WXWayland *createXWayland();
 
-    PersonalizationV1 *personalization() const;
-
     WSeat *seat() const;
 
     bool toggleDebugMenuBar();
 
-    WindowManagementV1::DesktopState showDesktopState() const;
+    WindowManagementInterfaceV1::DesktopState showDesktopState() const;
 
     Q_INVOKABLE bool isLaunchpad(WLayerSurface *surface) const;
     Q_INVOKABLE void setLaunchpadMapped(WOutput *output, bool mapped);
@@ -238,8 +247,16 @@ public:
     void updateIdleInhibitor();
 
     bool setXWindowPositionRelative(uint wid, WSurface *anchor, wl_fixed_t dx, wl_fixed_t dy) const;
+    SeatsManager *seatManager() const;
+
+    WSeat *getSeatForEvent(QInputEvent *event) const;
+    WSeat *findSeatForSurface(SurfaceWrapper *wrapper) const;
+    WSeat *getLastInteractingSeat(SurfaceWrapper *surface) const;
+    WSeat *currentEventSeat() const { return m_currentEventSeat; }
 
     bool isDDMDisplay() const { return m_isDDMDisplay; }
+
+    RootSurfaceContainer *rootContainer() const { return m_rootSurfaceContainer; }
 public Q_SLOTS:
     void activateSurface(SurfaceWrapper *wrapper, Qt::FocusReason reason = Qt::OtherFocusReason);
     void forceActivateSurface(SurfaceWrapper *wrapper,
@@ -259,7 +276,6 @@ Q_SIGNALS:
 
     void blockActivateSurfaceChanged();
     void requestQuit();
-    void updateWallpaper();
 
     void launchpadMappedChanged(WOutput *output, bool mapped);
     void showDesktopRequested(WOutput *output);
@@ -281,8 +297,8 @@ private:
     void onOutputTestOrApply(qw_output_configuration_v1 *config, bool onlyTest);
     void onSetOutputPowerMode(wlr_output_power_v1_set_mode_event *event);
     void onNewIdleInhibitor(wlr_idle_inhibitor_v1 *inhibitor);
-    void onSetCopyOutput(treeland_virtual_output_v1 *virtual_output);
-    void onRestoreCopyOutput(treeland_virtual_output_v1 *virtual_output);
+    void onSetCopyOutput(VirtualOutputInterfaceV1 *interface);
+    void onRestoreCopyOutput(VirtualOutputInterfaceV1 *interface);
     void onSurfaceWrapperAdded(SurfaceWrapper *wrapper);
     void onSurfaceWrapperAboutToRemove(SurfaceWrapper *wrapper);
     void handleRequestDrag([[maybe_unused]] WSurface *surface);
@@ -298,19 +314,15 @@ private:
     int indexOfOutput(WOutput *output) const;
 
     SurfaceWrapper *keyboardFocusSurface() const;
-    void requestKeyboardFocusForSurface(SurfaceWrapper *newActivateSurface, Qt::FocusReason reason);
     SurfaceWrapper *activatedSurface() const;
     void setActivatedSurface(SurfaceWrapper *newActivateSurface);
 
     void setCursorPosition(const QPointF &position);
 
-    bool beforeDisposeEvent(WSeat *seat, QWindow *watched, QInputEvent *event) override;
-    bool afterHandleEvent([[maybe_unused]] WSeat *seat,
-                          WSurface *watched,
-                          QObject *surfaceItem,
-                          QObject *,
-                          QInputEvent *event) override;
-    bool unacceptedEvent(WSeat *, QWindow *, QInputEvent *event) override;
+    bool beforeDisposeEvent(WSeat *seat, QWindow *window, QInputEvent *event) override;
+    bool afterHandleEvent(WSeat *seat, WSurface *watched, QObject *shellObject,
+                         QObject *eventObject, QInputEvent *event) override;
+    bool unacceptedEvent(WSeat *seat, QWindow *window, QInputEvent *event) override;
 
     void handleLeftButtonStateChanged(const QInputEvent *event);
     void handleWhellValueChanged(const QInputEvent *event);
@@ -330,6 +342,13 @@ private:
     void restoreFromShowDesktop(SurfaceWrapper *activeSurface = nullptr);
     void setNoAnimation(bool noAnimation);
     void configureNumlock();
+
+    void updateSurfaceSeatInteraction(SurfaceWrapper *surface, WSeat *seat);
+
+    void switchWorkspaceForSeat(WSeat *seat, int index);
+    void handleRequestDragForSeat(WSeat *seat, WSurface *surface);
+
+    WSeat *m_currentEventSeat = nullptr;
 
     static Helper *m_instance;
     std::unique_ptr<TreelandUserConfig> m_config;
@@ -367,14 +386,13 @@ private:
     WForeignToplevel *m_foreignToplevel = nullptr;
     WExtForeignToplevelListV1 *m_extForeignToplevelListV1 = nullptr;
     ShortcutManagerV2 *m_shortcutManager = nullptr;
-    PersonalizationV1 *m_personalization = nullptr;
-    WallpaperColorV1 *m_wallpaperColorV1 = nullptr;
+    PersonalizationManagerInterfaceV1 *m_personalizationInterfaceV1 = nullptr;
+    WallpaperColorInterfaceV1 *m_wallpaperColorV1 = nullptr;
     WOutputManagerV1 *m_outputManager = nullptr;
-    WindowManagementV1 *m_windowManagement = nullptr;
-    WindowManagementV1::DesktopState m_showDesktop = WindowManagementV1::DesktopState::Normal;
+    WindowManagementInterfaceV1 *m_windowManagementInterfaceV1 = nullptr;
+    WindowManagementInterfaceV1::DesktopState m_showDesktop = WindowManagementInterfaceV1::DesktopState::Normal;
     DDEShellManagerInterfaceV1 *m_ddeShellV1 = nullptr;
-    PrelaunchSplash *m_prelaunchSplash = nullptr; // treeland prelaunch splash protocol
-    VirtualOutputV1 *m_virtualOutput = nullptr;
+    VirtualOutputManagerInterfaceV1 *m_virtualOutputInterfaceV1 = nullptr;
     OutputManagerV1 *m_outputManagerV1 = nullptr;
     DDMInterfaceV1 *m_ddmInterfaceV1 = nullptr;
     ScreensaverInterfaceV1 *m_screensaverInterfaceV1 = nullptr;
@@ -402,8 +420,6 @@ private:
     QPropertyAnimation *m_workspaceScaleAnimation{ nullptr };
     QPropertyAnimation *m_workspaceOpacityAnimation{ nullptr };
 
-    bool m_singleMetaKeyPendingPressed{ false };
-
     IMultitaskView *m_multitaskView{ nullptr };
     UserModel *m_userModel{ nullptr };
     SessionModel *m_sessionModel{ nullptr };
@@ -423,4 +439,6 @@ private:
     PendingOutputConfig m_pendingOutputConfig;
 
     void onOutputCommitFinished(qw_output_configuration_v1 *config, bool success);
+
+    SeatsManager *m_seatManager = nullptr;
 };

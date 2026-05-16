@@ -5,7 +5,6 @@
 
 #include "core/qmlengine.h"
 #include "seat/helper.h"
-#include "modules/personalization/personalizationmanager.h"
 #include "workspace/workspacemodel.h"
 #include "wallpapershellinterfacev1.h"
 #include "wallpaper/wallpapermanager.h"
@@ -33,11 +32,11 @@ WallpaperItem::WallpaperItem(QQuickItem *parent)
     connect(Helper::instance()->shellHandler()->wallpaperShell(),
             &TreelandWallpaperShellInterfaceV1::wallpaperSurfaceAdded,
             this,
-            &WallpaperItem::handleWallpaperSurfaceAdded);
-    connect(Helper::instance(),
-            &Helper::updateWallpaper,
+            &WallpaperItem::scheduleUpdate);
+    connect(Helper::instance()->m_wallpaperManager,
+            &WallpaperManager::updateWallpaper,
             this,
-            &WallpaperItem::updateSurface);
+            &WallpaperItem::scheduleUpdate);
     connect(Helper::instance()->workspace(),
             &Workspace::workspaceAdded,
             this,
@@ -119,10 +118,6 @@ bool WallpaperItem::play() const
 
 void WallpaperItem::setPlay(bool value)
 {
-    if (m_play == value) {
-        return;
-    }
-
     TreelandWallpaperSurfaceInterfaceV1 *interface =
         TreelandWallpaperSurfaceInterfaceV1::get(source());
     if (!interface) {
@@ -171,7 +166,7 @@ void WallpaperItem::updateSurface()
     WallpaperOutputConfig config =
         Helper::instance()->m_wallpaperManager->getOutputConfig(output()->nativeHandle());
     if (wallpaperRole() == Lockscreen) {
-        if (config.lockscreenWallpaper != m_source) {
+        if (config.lockscreenWallpaper != m_source || forceUpdateSource()) {
                 TreelandWallpaperSurfaceInterfaceV1 *interface =
                     TreelandWallpaperSurfaceInterfaceV1::get(config.lockscreenWallpaper);
                 if (!interface) {
@@ -180,7 +175,7 @@ void WallpaperItem::updateSurface()
                 m_source = config.lockscreenWallpaper;
                 setSurface(interface->wSurface());
                 interface->wSurface()->enterOutput(output());
-                QTimer::singleShot(2000, this, [this]{ Q_EMIT sourceChanged(); });
+                update();
         }
         return;
     }
@@ -191,7 +186,7 @@ void WallpaperItem::updateSurface()
         }
         for (WallpaperWorkspaceConfig workspaceConfig : std::as_const(config.workspaces)) {
             if (workspaceConfig.workspaceId == workspace()->id() &&
-                workspaceConfig.desktopWallpaper != m_source) {
+                (workspaceConfig.desktopWallpaper != m_source || forceUpdateSource())) {
                 TreelandWallpaperSurfaceInterfaceV1 *interface =
                     TreelandWallpaperSurfaceInterfaceV1::get(workspaceConfig.desktopWallpaper);
                 if (!interface) {
@@ -200,6 +195,7 @@ void WallpaperItem::updateSurface()
                 m_source = workspaceConfig.desktopWallpaper;
                 setSurface(interface->wSurface());
                 interface->wSurface()->enterOutput(output());
+                update();
                 QTimer::singleShot(2000, this, [this]{ Q_EMIT sourceChanged(); });
                 break;
             }
@@ -208,14 +204,13 @@ void WallpaperItem::updateSurface()
     }
 }
 
-void WallpaperItem::handleWallpaperSurfaceAdded(TreelandWallpaperSurfaceInterfaceV1 *interface)
+void WallpaperItem::scheduleUpdate()
 {
     if (m_disableUpdate) {
         return;
     }
 
-    if (wallpaperRole() != Lockscreen &&
-        Helper::instance()->m_wallpaperManager->getWallpaperType(interface->source()) == TreelandWallpaperInterfaceV1::Video) {
+    if (wallpaperRole() != Lockscreen) {
         QTimer::singleShot(3000,
                            this,
                            [this]{
@@ -260,4 +255,19 @@ void WallpaperItem::setDisableUpdate(bool disable)
 
     m_disableUpdate = disable;
     Q_EMIT disableUpdateChanged();
+}
+
+bool WallpaperItem::forceUpdateSource() const
+{
+    return m_forceUpdateSource;
+}
+
+void WallpaperItem::setForceUpdateSource(bool value)
+{
+    if (m_forceUpdateSource == value) {
+        return;
+    }
+
+    m_forceUpdateSource = value;
+    Q_EMIT forceUpdateSourceChanged();
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2024 UnionTech Software Technology Co., Ltd.
+// Copyright (C) 2024-2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "capture.h"
@@ -236,9 +236,6 @@ void CaptureContextV1::handleSourceDestroyed()
 void CaptureContextV1::handleSessionStart()
 {
     m_currentFrameData.acked = true;
-    moveToThread(QQuickWindowPrivate::get(outputRenderWindow())->context->thread());
-    captureSource()->moveToThread(
-        QQuickWindowPrivate::get(outputRenderWindow())->context->thread());
     auto conn = connect(outputRenderWindow(),
                         &WOutputRenderWindow::renderEnd,
                         this,
@@ -580,7 +577,10 @@ void CaptureSourceSelector::doneSelection()
             this,
             &CaptureSourceSelector::createImage);
     m_internalContentItem->setVisible(false);
-    m_canvas->surfaceItem()->setSubsurfacesVisible(false);
+    // m_canvas may be null when no mask surface exists (e.g. capture via
+    // xdg-desktop-portal without a mask).  Guard against null dereference.
+    if (m_canvas && m_canvas->surfaceItem())
+        m_canvas->surfaceItem()->setSubsurfacesVisible(false);
 }
 
 void CaptureSourceSelector::cancelSelection()

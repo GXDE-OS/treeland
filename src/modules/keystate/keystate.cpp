@@ -31,8 +31,8 @@ public:
     QMetaObject::Connection m_keyboardConnection{};
 
 protected:
-    void org_kde_kwin_keystate_destroy(Resource *resource) override;
-    void org_kde_kwin_keystate_fetchStates(Resource *resource) override;
+    void destroy(Resource *resource) override;
+    void fetchStates(Resource *resource) override;
 };
 
 wl_global *KeyStateV5Private::global() const
@@ -53,22 +53,22 @@ void KeyStateV5Private::setKeyboard(WInputDevice *keyboard)
                      q, [this]() {
         const auto &resources = resourceMap();
         for (const auto &resource : resources) {
-            org_kde_kwin_keystate_fetchStates(resource);
+            fetchStates(resource);
         }
     });
     const auto &resources = resourceMap();
     for (const auto &resource : resources) {
-        org_kde_kwin_keystate_fetchStates(resource);
+        fetchStates(resource);
     }
 }
 
-void KeyStateV5Private::org_kde_kwin_keystate_destroy(Resource *resource)
+void KeyStateV5Private::destroy(Resource *resource)
 {
     wl_resource_destroy(resource->handle);
 }
 
 // mirroring KDE behavior
-void KeyStateV5Private::org_kde_kwin_keystate_fetchStates(Resource *resource)
+void KeyStateV5Private::fetchStates(Resource *resource)
 {
     if (!m_keyboard) {
         return;
@@ -122,7 +122,8 @@ void KeyStateV5Private::org_kde_kwin_keystate_fetchStates(Resource *resource)
 }
 
 KeyStateV5Private::KeyStateV5Private(WSeat *seat, KeyStateV5 *_q)
-    : q(_q)
+    : QtWaylandServer::org_kde_kwin_keystate()
+    , q(_q)
     , m_seat(seat)
 {
     assert(seat);
@@ -155,6 +156,7 @@ void KeyStateV5::create(WServer *server)
 
 void KeyStateV5::destroy([[maybe_unused]] WServer *server)
 {
+    d->globalRemove();
 }
 
 wl_global *KeyStateV5::global() const

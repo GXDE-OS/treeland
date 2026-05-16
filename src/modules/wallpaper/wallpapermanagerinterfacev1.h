@@ -22,6 +22,8 @@ public:
     explicit TreelandWallpaperManagerInterfaceV1(QObject *parent = nullptr);
     ~TreelandWallpaperManagerInterfaceV1() override;
 
+    QByteArrayView interfaceName() const override;
+
     static constexpr int InterfaceVersion = 1;
 
 Q_SIGNALS:
@@ -31,7 +33,6 @@ protected:
     void create(WServer *server) override;
     void destroy(WServer *server) override;
     wl_global *global() const override;
-    QByteArrayView interfaceName() const override;
 
 private:
     std::unique_ptr<TreelandWallpaperManagerInterfaceV1Private> d;
@@ -78,7 +79,6 @@ Q_SIGNALS:
     void videoSourceChanged(int workspaceIndex,
                             const QString &fileSource,
                             WallpaperRoles roles);
-    void binded();
 
 private:
     explicit TreelandWallpaperInterfaceV1(struct wl_resource *output,

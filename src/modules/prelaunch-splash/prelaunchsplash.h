@@ -5,27 +5,16 @@
 
 #include <wayland-server-core.h>
 #include <wserver.h>
+
 #include <qwbuffer.h>
-#include <memory>
 
 #include <QObject>
 
+#include <memory>
+
 Q_MOC_INCLUDE(<qwbuffer.h>)
 
-WAYLIB_SERVER_USE_NAMESPACE
-QW_USE_NAMESPACE
-
-namespace WAYLIB_SERVER_NAMESPACE {
-class WServer;
-}
-
-QW_BEGIN_NAMESPACE
-class qw_display;
-class qw_buffer;
-QW_END_NAMESPACE
-
 class PrelaunchSplashPrivate;
-struct wl_global;
 
 class PrelaunchSplash
     : public QObject
@@ -36,6 +25,7 @@ public:
     explicit PrelaunchSplash(QObject *parent = nullptr);
     ~PrelaunchSplash() override;
 
+    QByteArrayView interfaceName() const override;
 Q_SIGNALS:
     void splashRequested(const QString &appId,
                          const QString &instanceId,
@@ -46,10 +36,9 @@ protected: // WServerInterface
     void create(WAYLIB_SERVER_NAMESPACE::WServer *server) override;
     void destroy(WAYLIB_SERVER_NAMESPACE::WServer *server) override;
     wl_global *global() const override;
-    QByteArrayView interfaceName() const override;
 
 private:
     std::unique_ptr<PrelaunchSplashPrivate> d;
 };
 
-Q_DECLARE_OPAQUE_POINTER(QW_NAMESPACE::qw_buffer*)
+Q_DECLARE_OPAQUE_POINTER(QW_NAMESPACE::qw_buffer *)
