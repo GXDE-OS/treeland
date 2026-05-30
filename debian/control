@@ -57,6 +57,8 @@ Depends: qml6-module-qtquick-layouts,
          treeland-wallpaper-factory,
          ${misc:Depends},
          ${shlibs:Depends},
+         libdtk6declarative, 
+         qml6-module-qt5compat-graphicaleffects,
 Conflicts: libwaylib, qwlroots
 Replaces: libwaylib, qwlroots
 Recommends: ddm (>> 0.3.4),
