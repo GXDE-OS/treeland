@@ -1,3 +1,9 @@
+treeland (0.8.7gxde1) UNRELEASED; urgency=medium
+
+  * Add depends libdtk6declarative qml6-module-qt5compat-graphicaleffects
+
+ -- gfdgd_xi <3025613752@qq.com>  Sun, 31 May 2026 06:39:30 +0800
+
 treeland (0.8.7) unstable; urgency=medium
 
   * refactor(virtual-output): use QStringList join for output name
