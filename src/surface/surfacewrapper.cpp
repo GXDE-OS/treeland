@@ -62,6 +62,7 @@ SurfaceWrapper::SurfaceWrapper(QmlEngine *qmlEngine,
     , m_confirmHideByLockScreen(false)
     , m_blur(false)
     , m_isActivated(false)
+    , m_attention(false)
     , m_appId(appId)
 {
     QQmlEngine::setContextForObject(this, qmlEngine->rootContext());
@@ -94,6 +95,7 @@ SurfaceWrapper::SurfaceWrapper(SurfaceWrapper *original, QQuickItem *parent)
     , m_confirmHideByLockScreen(false)
     , m_blur(false)
     , m_isActivated(false)
+    , m_attention(false)
     , m_appId(original->m_appId)
 {
     QQmlEngine::setContextForObject(this, m_engine->rootContext());
@@ -159,6 +161,7 @@ SurfaceWrapper::SurfaceWrapper(QmlEngine *qmlEngine,
     , m_confirmHideByLockScreen(false)
     , m_blur(false)
     , m_isActivated(false)
+    , m_attention(false)
     , m_appId(appId)
 {
     QQmlEngine::setContextForObject(this, qmlEngine->rootContext());
@@ -445,6 +448,10 @@ void SurfaceWrapper::setActivate(bool activate)
 
     Q_ASSERT(!activate || hasActiveCapability());
     m_isActivated = activate;
+
+    if (m_attention && m_isActivated)
+        setAttention(false);
+
     // No shellSurface in prelaunch mode -> early return
     if (m_shellSurface)
         updateActiveState();
@@ -1029,6 +1036,24 @@ bool SurfaceWrapper::isActivated() const
     return m_isActivated;
 }
 
+bool SurfaceWrapper::attention() const
+{
+    return m_attention;
+}
+
+bool SurfaceWrapper::setAttention(bool attention)
+{
+    if (m_attention == attention)
+        return true;
+    if (attention && m_isActivated) {
+        qCWarning(treelandSurface) << "setAttention(true) ignored: surface is already activated";
+        return false;
+    }
+    m_attention = attention;
+    Q_EMIT attentionChanged();
+    return true;
+}
+
 void SurfaceWrapper::setNoDecoration(bool newNoDecoration)
 {
     if (m_wrapperAboutToRemove)
@@ -1553,6 +1578,8 @@ void SurfaceWrapper::setRadius(qreal newRadius)
 
 void SurfaceWrapper::requestMinimize(bool onAnimation)
 {
+    if (m_surfaceState == State::Minimized)
+        return;
     setSurfaceState(State::Minimized);
     if (onAnimation)
         startMinimizeAnimation(iconGeometry(), CLOSE_ANIMATION);

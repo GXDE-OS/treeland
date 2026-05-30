@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <QObject>
-#define private public
 #include <QCoreApplication>
 #include <private/qhighdpiscaling_p.h>
-#undef private
+#include "private/wprivateaccessor_p.h"
 
 #include "wserver.h"
 #include "private/wserver_p.h"
@@ -30,13 +29,14 @@
 #include <QProcess>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <unistd.h>
 #include <private/qthread_p.h>
 #include <private/qguiapplication_p.h>
 #include <qpa/qplatformthemefactory_p.h>
-#include <qpa/qplatformintegrationfactory_p.h>
 #include <qpa/qplatformtheme.h>
 
 QW_USE_NAMESPACE
+W_DECLARE_PRIVATE_STATIC_MEMBER(QHighDpiScaling_m_globalScalingActive_tag, QHighDpiScaling, m_globalScalingActive, bool);
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
 static bool globalFilter(const wl_client *client,
@@ -305,15 +305,15 @@ WServer *WServer::from(WServerInterface *interface)
     return interface->m_server;
 }
 
-static bool initializeQtPlatform(bool isMaster, const QStringList &parameters, std::function<void()> onInitialized)
+static bool initializeQtPlatform(const QStringList &parameters, std::function<void()> onInitialized)
 {
     Q_ASSERT(QGuiApplication::instance() == nullptr);
     if (QGuiApplicationPrivate::platform_integration)
         return false;
 
     QHighDpiScaling::initHighDpiScaling();
-    QHighDpiScaling::m_globalScalingActive = true; // force enable hidpi
-    QGuiApplicationPrivate::platform_integration = new QWlrootsIntegration(isMaster, parameters, onInitialized);
+    W_PRIVATE_STATIC_MEMBER(QHighDpiScaling_m_globalScalingActive_tag{}) = true; // force enable hidpi
+    QGuiApplicationPrivate::platform_integration = new QWlrootsIntegration(parameters, onInitialized);
 
     // for platform theme
     QStringList themeNames = QWlrootsIntegration::instance()->themeNames();
@@ -355,31 +355,12 @@ void WServer::start()
     d->init();
 }
 
-void WServer::initializeQPA(bool master, const QStringList &parameters)
+void WServer::initializeQPA(const QStringList &parameters)
 {
-    if (!initializeQtPlatform(master, parameters, nullptr)) {
+    if (!initializeQtPlatform(parameters, nullptr)) {
         qFatal("Can't initialize Qt platform plugin.");
         return;
     }
-}
-
-void WServer::initializeProxyQPA(int &argc, char **argv, const QStringList &proxyPlatformPlugins, const QStringList &parameters)
-{
-    Q_ASSERT(!proxyPlatformPlugins.isEmpty());
-
-    QPlatformIntegration *proxy = nullptr;
-    for (const QString &name : std::as_const(proxyPlatformPlugins)) {
-        if (name.isEmpty())
-            continue;
-        proxy = QPlatformIntegrationFactory::create(name, parameters, argc, argv);
-        if (proxy)
-            break;
-    }
-    if (!proxy) {
-        qFatal() << "Can't create the proxy platform plugin:" << proxyPlatformPlugins;
-    }
-    proxy->initialize();
-    QWlrootsIntegration::instance()->setProxy(proxy);
 }
 
 bool WServer::isRunning() const

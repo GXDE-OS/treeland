@@ -133,6 +133,7 @@
 #include <linux/input.h>
 #include <pwd.h>
 #include <sys/ioctl.h>
+#include <unistd.h>
 #include <utility>
 #include <wayland-util.h>
 
@@ -503,6 +504,13 @@ void Helper::onOutputRemoved(WOutput *output)
 
         for (int i = 0; i < m_outputList.size(); i++) {
             Output *copyOutput = m_outputList.at(i);
+
+            if (copyOutput->isPrimary()) {
+                if (!primaryCandidate)
+                    primaryCandidate = copyOutput;
+                continue;
+            }
+
             Output *normalOutput = createNormalOutput(copyOutput->output());
             normalOutput->enable();
 
@@ -528,6 +536,7 @@ void Helper::onOutputRemoved(WOutput *output)
         }
 
         for (auto oldOutput : oldOutputsToDelete) {
+            m_rootSurfaceContainer->removeOutput(oldOutput);
             delete oldOutput;
         }
 
@@ -1196,10 +1205,12 @@ void Helper::onSurfaceWrapperAboutToRemove(SurfaceWrapper *wrapper)
         m_extForeignToplevelListV1->removeSurface(wrapper->shellSurface());
     }
     // Ensure the wrapper is removed from active history early to avoid cascading on half-invalid entries
-    if (wrapper) {
+    if (wrapper && wrapper->workspaceId() != -1) {
         auto ws = workspace();
-        if (ws)
+        if (ws) {
+            Q_ASSERT(ws == wrapper->container());
             ws->removeActivedSurface(wrapper);
+        }
     }
 }
 
@@ -1511,6 +1522,49 @@ void Helper::init(Treeland::Treeland *treeland)
 
     m_idleInhibitManager = qw_idle_inhibit_manager_v1::create(*m_server->handle());
     connect(m_idleInhibitManager, &qw_idle_inhibit_manager_v1::notify_new_inhibitor, this, &Helper::onNewIdleInhibitor);
+
+    m_activationManagerV1 = m_server->attach<ActivationManagerInterfaceV1>(
+        [this](WSurface *surface) -> bool {
+            // Determine whether the Surface can be trusted to transfer its active state.
+            auto wrapper = m_rootSurfaceContainer->getSurface(surface);
+            if (!wrapper) {
+                return false;
+            }
+            if (wrapper->isActivated()) {
+                return true;
+            }
+            if (keyboardFocusSurface() == wrapper) {
+                // Special windows, such as Layer Shell, do not have the concept of "activation."
+                return true;
+            }
+            return false;
+        });
+    connect(m_activationManagerV1,
+            &ActivationManagerInterfaceV1::activateRequested,
+            this,
+            [this](ActivationManagerInterfaceV1::TokenDisposition disposition, WSurface *wsurface) {
+                auto wrapper = m_rootSurfaceContainer->getSurface(wsurface);
+                if (!wrapper) {
+                    qCWarning(treelandCore) << "Activation request for unknown surface!";
+                    return;
+                }
+                if (!wsurface->mapped()) {
+                    qCWarning(treelandCore) << "Activation request for unmapped surface!";
+                    return;
+                }
+                switch (disposition) {
+                case ActivationManagerInterfaceV1::TokenDisposition::Active:
+                    forceActivateSurface(wrapper, Qt::OtherFocusReason);
+                    break;
+                case ActivationManagerInterfaceV1::TokenDisposition::Attention:
+                    wrapper->setAttention(true);
+                    break;
+                case ActivationManagerInterfaceV1::TokenDisposition::Invalid:
+                    // Use a relaxed policy: fallback to attention if the token is invalid
+                    wrapper->setAttention(true);
+                    break;
+                }
+            });
 
     m_screensaverInterfaceV1 = m_server->attach<ScreensaverInterfaceV1>();
 
@@ -2838,7 +2892,7 @@ void Helper::handleRequestDragForSeat(WSeat *seat, WSurface *)
             DDEActiveInterface::sendDrop(seat);
     });
 
-    QObject::connect(qw_drag::from(drag), &qw_drag::before_destroy, this, [this, seat, drag] {
+    QObject::connect(qw_drag::from(drag), &qw_drag::before_destroy, this, [seat, drag] {
         drag->data = NULL;
         seat->setAlwaysUpdateHoverTarget(false);
     });

@@ -15,6 +15,7 @@
 #include <qwxdgshell.h>
 
 #include <QList>
+#include <QTimer>
 #define TREELAND_WINE_WINDOW_STATE_MANAGER_V1_VERSION 1
 
 WAYLIB_SERVER_USE_NAMESPACE
@@ -90,6 +91,9 @@ public:
         m_wrapper->shellSurface()->safeConnect(&WToplevelSurface::minimizeChanged, this, [this] {
             sendStateChanged();
         });
+        connect(m_wrapper, &SurfaceWrapper::attentionChanged, this, [this] {
+            sendStateChanged();
+        });
         connect(m_wrapper, &SurfaceWrapper::aboutToBeInvalidated, this, [this] {
             if (m_manager) {
                 m_manager->removeState(this);
@@ -147,23 +151,33 @@ protected:
 
     void set_attention([[maybe_unused]] Resource *resource,
                        [[maybe_unused]] uint32_t count,
-                       [[maybe_unused]] uint32_t timeoutMs) override
+                       uint32_t timeoutMs) override
     {
         if (!m_wrapper)
             return;
-        m_attention = true;
-        // TODO：foreign-toplevel open no extension attention capability
-        qCWarning(treelandProtocol) << "set_attention is not fully supported yet, attention "
-                                       "state will never be cleared automatically";
-        sendStateChanged();
+        m_wrapper->setAttention(true);
+        if (timeoutMs > 0) {
+            if (!m_attentionTimer) {
+                m_attentionTimer = new QTimer(this);
+                m_attentionTimer->setSingleShot(true);
+                connect(m_attentionTimer, &QTimer::timeout, this, [this] {
+                    if (m_wrapper)
+                        m_wrapper->setAttention(false);
+                });
+            }
+            m_attentionTimer->start(static_cast<int>(timeoutMs));
+        } else if (m_attentionTimer) {
+            m_attentionTimer->stop();
+        }
     }
 
     void clear_attention([[maybe_unused]] Resource *resource) override
     {
         if (!m_wrapper)
             return;
-        m_attention = false;
-        sendStateChanged();
+        if (m_attentionTimer)
+            m_attentionTimer->stop();
+        m_wrapper->setAttention(false);
     }
 
 private:
@@ -173,9 +187,9 @@ private:
             return;
 
         uint32_t state = 0;
-        if (m_wrapper && m_wrapper->isMinimized())
+        if (m_wrapper->isMinimized())
             state |= TREELAND_WINE_WINDOW_STATE_V1_STATE_MINIMIZED;
-        if (m_attention)
+        if (m_wrapper->attention())
             state |= TREELAND_WINE_WINDOW_STATE_V1_STATE_ATTENTION;
 
         send_state_changed(state);
@@ -184,7 +198,7 @@ private:
 private:
     WineWindowStateManagerPrivate *m_manager = nullptr;
     SurfaceWrapper *m_wrapper = nullptr;
-    bool m_attention = false;
+    QTimer *m_attentionTimer = nullptr;
 };
 
 void WineWindowStateManagerPrivate::removeState(WineWindowState *state)
