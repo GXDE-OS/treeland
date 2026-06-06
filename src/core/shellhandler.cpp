@@ -64,21 +64,27 @@ ShellHandler::ShellHandler(RootSurfaceContainer *rootContainer, WServer *server)
     , m_popupContainer(new SurfaceContainer(rootContainer))
     , m_windowConfigStore(new WindowConfigStore(this))
 {
-    m_treelandForeignToplevel = server->attach<ForeignToplevelV1>();
+    m_treelandForeignToplevel = server->attach<ForeignToplevelManagerInterfaceV1>();
     Q_ASSERT(m_treelandForeignToplevel);
-    qmlRegisterSingletonInstance<ForeignToplevelV1>("Treeland.Protocols",
+    qmlRegisterSingletonInstance<ForeignToplevelManagerInterfaceV1>("Treeland.Protocols",
                                                     1,
                                                     0,
-                                                    "ForeignToplevelV1",
+                                                    "ForeignToplevelManagerInterfaceV1",
                                                     m_treelandForeignToplevel);
-    qRegisterMetaType<ForeignToplevelV1::PreviewDirection>();
+    qRegisterMetaType<ForeignToplevelManagerInterfaceV1::PreviewDirection>();
 
     m_backgroundContainer->setZ(RootSurfaceContainer::BackgroundZOrder);
+    m_backgroundContainer->setObjectName(QStringLiteral("BackgroundContainer"));
     m_bottomContainer->setZ(RootSurfaceContainer::BottomZOrder);
+    m_bottomContainer->setObjectName(QStringLiteral("BottomContainer"));
     m_workspace->setZ(RootSurfaceContainer::NormalZOrder);
+    m_workspace->setObjectName(QStringLiteral("WorkspaceContainer"));
     m_topContainer->setZ(RootSurfaceContainer::TopZOrder);
+    m_topContainer->setObjectName(QStringLiteral("TopContainer"));
     m_overlayContainer->setZ(RootSurfaceContainer::OverlayZOrder);
+    m_overlayContainer->setObjectName(QStringLiteral("OverlayContainer"));
     m_popupContainer->setZ(RootSurfaceContainer::PopupZOrder);
+    m_popupContainer->setObjectName(QStringLiteral("PopupContainer"));
 }
 
 void ShellHandler::updateWrapperContainer(SurfaceWrapper *wrapper, WSurface *parentSurface)
@@ -539,7 +545,7 @@ void ShellHandler::onXdgPopupSurfaceRemoved(WXdgPopupSurface *surface)
 
 void ShellHandler::onXWaylandSurfaceAdded(WXWaylandSurface *surface)
 {
-    surface->safeConnect(&qw_xwayland_surface::notify_associate,
+    surface->safeConnect(&WXWaylandSurface::associated,
                          this,
                          [this, surface = QPointer<WXWaylandSurface>(surface)] {
                              auto raw = surface.data();
@@ -582,14 +588,14 @@ void ShellHandler::onXWaylandSurfaceAdded(WXWaylandSurface *surface)
                              // fallback retrieval)
                              ensureXwaylandWrapper(raw, QString());
                          });
-    surface->safeConnect(&qw_xwayland_surface::notify_dissociate, this, [this, surface] {
-        auto wrapper = m_rootSurfaceContainer->getSurface(surface->surface());
-        qCDebug(treelandShell) << "WXWayland::notify_dissociate" << surface << wrapper;
+    surface->safeConnect(&WXWaylandSurface::aboutToDissociate, this, [this, surface] {
+        auto wrapper = m_rootSurfaceContainer->getSurface(surface);
+        qCDebug(treelandShell) << "WXWayland::aboutToDissociate" << surface << wrapper;
         // Cancel pending async resolve if still present. If wrapper never created, return.
         if (!wrapper) {
             if (!m_pendingAppIdResolveToplevels.removeOne(surface)) {
                 qCWarning(treelandShell)
-                    << "WXWayland::notify_dissociate for unknown surface" << surface;
+                    << "WXWayland::aboutToDissociate for unknown surface" << surface;
             }
             return; // never created
         }
@@ -685,15 +691,15 @@ void ShellHandler::setupDockPreview()
     Q_ASSERT(m_dockPreview);
 
     connect(m_treelandForeignToplevel,
-            &ForeignToplevelV1::requestDockPreview,
+            &ForeignToplevelManagerInterfaceV1::requestDockPreview,
             this,
             &ShellHandler::onDockPreview);
     connect(m_treelandForeignToplevel,
-            &ForeignToplevelV1::requestDockPreviewTooltip,
+            &ForeignToplevelManagerInterfaceV1::requestDockPreviewTooltip,
             this,
             &ShellHandler::onDockPreviewTooltip);
     connect(m_treelandForeignToplevel,
-            &ForeignToplevelV1::requestDockClose,
+            &ForeignToplevelManagerInterfaceV1::requestDockClose,
             m_dockPreview,
             [this]() {
                 QMetaObject::invokeMethod(m_dockPreview, "close");
@@ -703,7 +709,7 @@ void ShellHandler::setupDockPreview()
 void ShellHandler::onDockPreview(std::vector<SurfaceWrapper *> surfaces,
                                  WSurface *target,
                                  QPoint pos,
-                                 ForeignToplevelV1::PreviewDirection direction)
+                                 ForeignToplevelManagerInterfaceV1::PreviewDirection direction)
 {
     if (!m_dockPreview)
         return;
@@ -722,7 +728,7 @@ void ShellHandler::onDockPreview(std::vector<SurfaceWrapper *> surfaces,
 void ShellHandler::onDockPreviewTooltip(QString tooltip,
                                         WSurface *target,
                                         QPoint pos,
-                                        ForeignToplevelV1::PreviewDirection direction)
+                                        ForeignToplevelManagerInterfaceV1::PreviewDirection direction)
 {
     if (!m_dockPreview)
         return;
@@ -877,6 +883,9 @@ void ShellHandler::onInputPopupSurfaceV2Added(WInputPopupSurface *surface)
     auto parentWrapper = m_rootSurfaceContainer->getSurface(parent);
     parentWrapper->addSubSurface(wrapper);
     m_popupContainer->addSurface(wrapper);
+    // m_popupContainer is a simple SurfaceContainer, so input popups need the
+    // same explicit initialization marker as xdg popups for their first layout.
+    wrapper->setHasInitializeContainer(true);
     wrapper->setOwnsOutput(parentWrapper->ownsOutput());
     Q_ASSERT(wrapper->parentItem());
     Q_EMIT surfaceWrapperAdded(wrapper);
@@ -886,6 +895,7 @@ void ShellHandler::onInputPopupSurfaceV2Removed(WInputPopupSurface *surface)
 {
     auto wrapper = m_rootSurfaceContainer->getSurface(surface->surface());
     Q_EMIT surfaceWrapperAboutToRemove(wrapper);
+    wrapper->setHasInitializeContainer(false);
     m_rootSurfaceContainer->destroyForSurface(wrapper);
 }
 

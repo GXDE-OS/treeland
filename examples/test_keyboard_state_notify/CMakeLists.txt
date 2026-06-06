@@ -1,7 +1,7 @@
-find_package(Qt6 REQUIRED COMPONENTS WaylandClient Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Gui WaylandClient)
 find_package(TreelandProtocols REQUIRED)
 
-set(BIN_NAME test-keystate)
+set(BIN_NAME test-keyboard-state-notify)
 
 qt_add_executable(${BIN_NAME}
     main.cpp
@@ -9,13 +9,12 @@ qt_add_executable(${BIN_NAME}
 
 qt_generate_wayland_protocol_client_sources(${BIN_NAME}
     FILES
-        ${CMAKE_SOURCE_DIR}/protocols/kde-keystate.xml
+        ${TREELAND_PROTOCOLS_DATA_DIR}/treeland-keyboard-state-notify-unstable-v1.xml
 )
 
 target_link_libraries(${BIN_NAME}
     PRIVATE
         Qt6::Gui
-        Qt6::Widgets
         Qt6::WaylandClient
 )
 

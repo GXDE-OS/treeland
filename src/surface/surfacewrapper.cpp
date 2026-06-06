@@ -179,19 +179,46 @@ SurfaceWrapper::SurfaceWrapper(QmlEngine *qmlEngine,
     updateHasActiveCapability(ActiveControlState::MappedOrSplash, true); // Splash is true
 }
 
-SurfaceWrapper::~SurfaceWrapper()
+void SurfaceWrapper::invalidate()
 {
-    Q_ASSERT_X(m_wrapperAboutToRemove,
-               Q_FUNC_INFO,
-               "SurfaceWrapper must be removed via markWrapperToRemoved before destruction");
-
-    Q_ASSERT(!m_ownsOutput);
-    Q_ASSERT(!m_container);
-    Q_ASSERT(!m_parentSurface);
-    Q_ASSERT(m_subSurfaces.isEmpty());
+    Q_ASSERT_X(!m_wrapperAboutToRemove, Q_FUNC_INFO, "Can't call `invalidate` twice!");
+    m_wrapperAboutToRemove = true;
+    Q_EMIT aboutToBeInvalidated();
 
     if (!m_skipDockPreView)
         setSkipDockPreView(true);
+
+    if (m_container) {
+        m_container->removeSurface(this);
+        m_container = nullptr;
+    }
+    if (m_ownsOutput) {
+        m_ownsOutput->removeSurface(this);
+        m_ownsOutput = nullptr;
+    }
+    if (m_parentSurface) {
+        m_parentSurface->removeSubSurface(this);
+        m_parentSurface = nullptr;
+    }
+    for (auto subS : std::as_const(m_subSurfaces)) {
+        subS->m_parentSurface = nullptr;
+    }
+    m_subSurfaces.clear();
+    m_shellSurface = nullptr;
+    if (m_surfaceItem)
+        m_surfaceItem->disconnect(this);
+}
+
+SurfaceWrapper::~SurfaceWrapper()
+{
+    if (!m_wrapperAboutToRemove) {
+        if (isWindowAnimationRunning()) {
+            qCWarning(treelandSurface)
+                << "SurfaceWrapper is being destroyed without destroy(); expected external"
+                   " destroy() rather than QObject parent-child destruction";
+        }
+        invalidate();
+    }
     if (m_titleBar) {
         delete m_titleBar;
         m_titleBar = nullptr;
@@ -293,8 +320,7 @@ void SurfaceWrapper::setup()
                                         this,
                                         [this](WSeat *, QPoint pos, quint32) {
                                             Q_EMIT requestShowWindowMenu(
-                                                { pos.x() + m_surfaceItem->leftPadding(),
-                                                  pos.y() + m_surfaceItem->topPadding() });
+                                                m_surfaceItem->mapFromSurface(pos).toPoint());
                                         });
         }
     }
@@ -506,16 +532,40 @@ void SurfaceWrapper::syncPrelaunchMappedState()
 
 void SurfaceWrapper::startPrelaunchSplashHideSequence()
 {
-    auto surf = surface();
-    Q_ASSERT(surf != nullptr && m_surfaceItem != nullptr);
-    // A newly created QQuickItem may report implicitWidth/implicitHeight as 0
-    // before polish/layout. WSurface::size() is already stable after mapped.
-    QSizeF targetImplicitSize = surf->size();
+    Q_ASSERT(m_surfaceItem != nullptr);
+    if (m_windowAnimation) {
+        qCDebug(treelandSurface) << "prelaunch splash transition is starting while window "
+                                    "animation is still running,"
+                                    "this may cause visual glitches, will delay the transition "
+                                    "until window animation finishes";
+        return;
+    }
+    if (m_geometryAnimation) {
+        qCDebug(treelandSurface) << "prelaunch splash transition already prepared or running, skip";
+        return;
+    }
+
+    // Wait until surfaceItem has computed a valid scene-space implicit size.
+    // For XWayland, this happens in updateSurfaceState() after the first surface commit;
+    // for other types it may be deferred until componentComplete + first polish.
+    if (!m_surfaceItem->isReady()) {
+        connect(m_surfaceItem,
+                &WSurfaceItem::readyChanged,
+                this,
+                &SurfaceWrapper::startPrelaunchSplashHideSequence,
+                Qt::SingleShotConnection);
+        return;
+    }
+
+    // Use surfaceItem's scene-space implicit size: for XWayland, surf->size() is
+    // buffer-space and differs from scene-space after DPR scaling via surfaceSizeRatio.
+    const QSizeF targetImplicitSize(m_surfaceItem->implicitWidth(),
+                                    m_surfaceItem->implicitHeight());
     const bool hasValidTargetImplicitSize =
         targetImplicitSize.width() > 0 && targetImplicitSize.height() > 0;
     if (!hasValidTargetImplicitSize) {
         qCCritical(treelandSurface) << "Invalid target implicit size, skip transition animation"
-                                   << "targetImplicit=" << targetImplicitSize;
+                                    << "targetImplicit=" << targetImplicitSize;
     }
 
     const bool needImplicitSizeTransition = hasValidTargetImplicitSize && (container() != nullptr)
@@ -523,19 +573,6 @@ void SurfaceWrapper::startPrelaunchSplashHideSequence()
             || !qFuzzyCompare(implicitHeight() + 1.0, targetImplicitSize.height() + 1.0));
 
     if (needImplicitSizeTransition) {
-        if (m_windowAnimation) {
-            qCDebug(treelandSurface) << "prelaunch splash transition is starting while window "
-                                        "animation is still running,"
-                                        "this may cause visual glitches, will delay the transition "
-                                        "until window animation finishes";
-            return;
-        }
-        if (m_geometryAnimation) {
-            qCWarning(treelandSurface)
-                << "prelaunch splash transition already prepared or running, skip";
-            return;
-        }
-
         const QRectF fromGeometry(position(), size());
         // XWayland clients manage their own position; respect it and don't shift.
         // For all other types, keep the center fixed so the window expands from center.
@@ -560,8 +597,6 @@ void SurfaceWrapper::startPrelaunchSplashHideSequence()
         ok = QMetaObject::invokeMethod(m_geometryAnimation, "start");
         Q_ASSERT(ok);
     } else {
-        // WSurface size is available when mapped; implicit size of a newly created
-        // QQuickItem can still be 0 before polish/layout in following event loops.
         completeSplashTransition(targetImplicitSize);
     }
 }
@@ -983,38 +1018,12 @@ bool SurfaceWrapper::isWindowAnimationRunning() const
     return !m_windowAnimation.isNull();
 }
 
-void SurfaceWrapper::markWrapperToRemoved()
+void SurfaceWrapper::destroy()
 {
-    Q_ASSERT_X(!m_wrapperAboutToRemove, Q_FUNC_INFO, "Can't call `markWrapperToRemoved` twice!");
-    m_wrapperAboutToRemove = true;
-    Q_EMIT aboutToBeInvalidated();
-
-    if (!m_skipDockPreView)
-        setSkipDockPreView(true);
-
-    if (m_container) {
-        m_container->removeSurface(this);
-        m_container = nullptr;
-    }
-    if (m_ownsOutput) {
-        m_ownsOutput->removeSurface(this);
-        m_ownsOutput = nullptr;
-    }
-    if (m_parentSurface) {
-        m_parentSurface->removeSubSurface(this);
-        m_parentSurface = nullptr;
-    }
-    for (auto subS : std::as_const(m_subSurfaces)) {
-        subS->m_parentSurface = nullptr;
-    }
-    m_subSurfaces.clear();
-    m_shellSurface = nullptr;
-    if (m_surfaceItem)
-        m_surfaceItem->disconnect(this);
-
-    if (!isWindowAnimationRunning()) {
+    invalidate();
+    if (!isWindowAnimationRunning())
         deleteLater();
-    } // else delete this in Animation(for window close animation) finish
+    // else delete this in Animation(for window close animation) finish
 }
 
 bool SurfaceWrapper::acceptKeyboardFocus() const

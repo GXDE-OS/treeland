@@ -20,6 +20,7 @@
 #include <wqmlcreator.h>
 #include <wseat.h>
 #include <wxdgdecorationmanager.h>
+#include <wxdgtopleveltagmanager.h>
 
 #include <QList>
 #include <QMap>
@@ -98,7 +99,7 @@ QW_USE_NAMESPACE
 class CaptureSourceSelector;
 class DDEShellManagerInterfaceV1;
 class DDMInterfaceV1;
-class ForeignToplevelV1;
+class ForeignToplevelManagerInterfaceV1;
 class FpsDisplayManager;
 class GreeterProxy;
 class ILockScreen;
@@ -123,13 +124,17 @@ class SurfaceContainer;
 class SurfaceWrapper;
 class TreelandConfig;
 class TreelandUserConfig;
+class TreelandRemoteSource;
 class UserModel;
 class VirtualOutputManagerInterfaceV1;
 class WallpaperColorInterfaceV1;
 class WindowManagementInterfaceV1;
 class WindowPickerInterface;
+class TreelandKeyboardStateNotifyManagerInterfaceV1;
 class WallpaperManager;
 class WallpaperItem;
+class TreelandInputManagerInterfaceV1;
+class InputManager;
 
 struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request;
 struct wlr_idle_inhibitor_v1;
@@ -257,6 +262,7 @@ public:
     bool isDDMDisplay() const { return m_isDDMDisplay; }
 
     RootSurfaceContainer *rootContainer() const { return m_rootSurfaceContainer; }
+    inline WBackend *backend() const { return m_backend; }
 public Q_SLOTS:
     void activateSurface(SurfaceWrapper *wrapper, Qt::FocusReason reason = Qt::OtherFocusReason);
     void forceActivateSurface(SurfaceWrapper *wrapper,
@@ -309,6 +315,7 @@ private:
     friend class SessionManager;
     friend class WallpaperManager;
     friend class WallpaperItem;
+    friend class InputManager;
 
     void allowNonDrmOutputAutoChangeMode(WOutput *output);
     int indexOfOutput(WOutput *output) const;
@@ -341,7 +348,6 @@ private:
     void setWorkspaceVisible(bool visible);
     void restoreFromShowDesktop(SurfaceWrapper *activeSurface = nullptr);
     void setNoAnimation(bool noAnimation);
-    void configureNumlock();
 
     void updateSurfaceSeatInteraction(SurfaceWrapper *surface, WSeat *seat);
 
@@ -384,6 +390,7 @@ private:
     ActivationManagerInterfaceV1 *m_activationManagerV1 = nullptr;
     ShellHandler *m_shellHandler = nullptr;
     WXdgDecorationManager *m_xdgDecorationManager = nullptr;
+    WXdgToplevelTagManagerV1 *m_xdgToplevelTagManagerV1 = nullptr;
     WForeignToplevel *m_foreignToplevel = nullptr;
     WExtForeignToplevelListV1 *m_extForeignToplevelListV1 = nullptr;
     ShortcutManagerV2 *m_shortcutManager = nullptr;
@@ -399,6 +406,7 @@ private:
     ScreensaverInterfaceV1 *m_screensaverInterfaceV1 = nullptr;
     TreelandWallpaperManagerInterfaceV1 *m_wallpaperManagerInterfaceV1 = nullptr;
     TreelandWallpaperNotifierInterfaceV1 *m_wallpaperNotifierInterfaceV1 = nullptr;
+    TreelandKeyboardStateNotifyManagerInterfaceV1 *m_keyboardStateNotifyManagerInterfaceV1 = nullptr;
 #ifdef EXT_SESSION_LOCK_V1
     WSessionLockManager *m_sessionLockManager = nullptr;
     QTimer *m_lockScreenGraceTimer = nullptr;
@@ -430,6 +438,9 @@ private:
 
     bool m_noAnimation{ false };
     bool m_isDDMDisplay{ false };
+    void tryInitRemoteSource();
+
+    TreelandRemoteSource *m_treelandRemoteSource = nullptr;
 
     struct PendingOutputConfig {
         qw_output_configuration_v1 *config = nullptr;
@@ -442,4 +453,6 @@ private:
     void onOutputCommitFinished(qw_output_configuration_v1 *config, bool success);
 
     SeatsManager *m_seatManager = nullptr;
+    InputManager *m_inputManager = nullptr;
+    TreelandInputManagerInterfaceV1 *m_inputManagerInterfaceV1 = nullptr;
 };

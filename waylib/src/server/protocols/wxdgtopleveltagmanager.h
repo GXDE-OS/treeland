@@ -3,32 +3,31 @@
 
 #pragma once
 
-#include "wserver.h"
+#include <WServer>
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
-class WSeat;
-WAYLIB_SERVER_END_NAMESPACE
 
-WAYLIB_SERVER_USE_NAMESPACE
+class WSurface;
+class WXdgToplevelTagManagerV1Private;
 
-
-class KeyStateV5Private;
-class KeyStateV5
+class WAYLIB_SERVER_EXPORT WXdgToplevelTagManagerV1
     : public QObject
+    , public WObject
     , public WServerInterface
 {
     Q_OBJECT
-public:
-    explicit KeyStateV5(WSeat *seat, QObject *parent = nullptr);
-    ~KeyStateV5() override;
+    W_DECLARE_PRIVATE(WXdgToplevelTagManagerV1)
+    QML_NAMED_ELEMENT(XdgToplevelTagManagerV1)
+    QML_UNCREATABLE("Can't create in qml")
 
+public:
+    explicit WXdgToplevelTagManagerV1();
     QByteArrayView interfaceName() const override;
 
 protected:
-    void create(WServer *server) override;
+    void create(WServer *wserver) override;
     void destroy(WServer *server) override;
     wl_global *global() const override;
-
-private:
-    std::unique_ptr<KeyStateV5Private> d;
 };
+
+WAYLIB_SERVER_END_NAMESPACE

@@ -5,7 +5,7 @@ Build-Depends: cmake (>= 3.25.0),
                debhelper-compat (= 13),
                ninja-build,
                extra-cmake-modules (>= 1.4.0~),
-               libddm-dev (>= 0.3.3),
+               libddm-dev (>> 0.3.4),
                libdtk6core-bin,
                libdtk6core-dev,
                libdtk6declarative-dev,
@@ -32,6 +32,7 @@ Build-Depends: cmake (>= 3.25.0),
                qt6-wayland,
                qt6-wayland-dev,
                qt6-wayland-private-dev,
+               qt6-remoteobjects-dev,
                wayland-protocols,
                wlr-protocols,
                treeland-protocols (>= 0.5.7),
@@ -59,17 +60,19 @@ Depends: qml6-module-qtquick-layouts,
          treeland-wallpaper-factory,
          libdtk6declarative, 
          qml6-module-qt5compat-graphicaleffects,
+         ${misc:Depends},
          ${shlibs:Depends},
 Conflicts: libwaylib, qwlroots
 Replaces: libwaylib, qwlroots
-Recommends: ddm (>= 0.3.3),
+Recommends: ddm (>> 0.3.4),
 Description: a Wayland compositor based on wlroots and QML, designed with an attractive and elegant appearance.
 
 Package: treeland-dev
 Section: libdevel
 Architecture: any
 Multi-Arch: same
-Depends: ${misc:Depends}, treeland( =${source:Version}),
+Depends: ${misc:Depends},
+         treeland (= ${source:Version}),
 Conflicts: libwaylib-dev, qwlroots
 Replaces: libwaylib-dev, qwlroots
 Description: a Wayland compositor based on wlroots and QML, designed with an attractive and elegant appearance.
@@ -78,7 +81,8 @@ Package: treeland-examples
 Section: dde
 Architecture: any
 Multi-Arch: same
-Depends: ${shlibs:Depends},
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
 Description: examples for treeland.
 
 Package: treeland-data
