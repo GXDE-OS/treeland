@@ -1,4 +1,4 @@
-find_package(TreelandProtocols REQUIRED 0.5.7)
+find_package(TreelandProtocols REQUIRED)
 
 local_qtwayland_server_protocol_treeland(libtreeland
     PROTOCOL ${TREELAND_PROTOCOLS_DATA_DIR}/treeland-foreign-toplevel-manager-v1.xml

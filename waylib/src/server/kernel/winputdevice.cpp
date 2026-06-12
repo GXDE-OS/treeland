@@ -87,8 +87,9 @@ QString DeviceInfoParser::getPhysicalPath(const QString& deviceName)
 class Q_DECL_HIDDEN WInputDevicePrivate : public WWrapObjectPrivate
 {
 public:
-    WInputDevicePrivate(WInputDevice *qq, void *handle)
+    WInputDevicePrivate(WInputDevice *qq, void *handle, bool _isVirtual)
         : WWrapObjectPrivate(qq)
+        , isVirtual(_isVirtual)
     {
         initHandle(reinterpret_cast<qw_input_device*>(handle));
         this->handle()->set_data(this, qq);
@@ -111,10 +112,11 @@ public:
     QPointer<QInputDevice> qtDevice;
     QPointer<QObject> hoverTarget;
     WSeat *seat = nullptr;
+    bool isVirtual = false;
 };
 
-WInputDevice::WInputDevice(qw_input_device *handle)
-    : WWrapObject(*new WInputDevicePrivate(this, handle))
+WInputDevice::WInputDevice(qw_input_device *handle, bool isVirtual)
+    : WWrapObject(*new WInputDevicePrivate(this, handle, isVirtual))
 {
 
 }
@@ -234,6 +236,33 @@ QString WInputDevice::devicePath() const
         return procPhysPath;
     }
     return QString();
+}
+
+bool WInputDevice::isVirtual() const
+{
+    W_DC(WInputDevice);
+
+    return d->isVirtual;
+}
+
+WInputDevice::LibinputPointerType WInputDevice::libinputPointerType() const
+{
+    if (!handle()->is_libinput()) {
+        return LibinputPointerType::Unknown;
+    }
+
+    struct libinput_device *inputDevice = wlr_libinput_get_device_handle(handle()->handle());
+    struct udev_device *udevDevice = libinput_device_get_udev_device(inputDevice);
+
+    if (udev_device_get_property_value(udevDevice, "ID_INPUT_MOUSE")) {
+        return LibinputPointerType::Mouse;
+    }
+
+    if (udev_device_get_property_value(udevDevice, "ID_INPUT_TOUCHPAD")) {
+        return LibinputPointerType::TouchPad;
+    }
+
+    return LibinputPointerType::Unknown;
 }
 
 void WInputDevice::setExclusiveGrabber(QObject *grabber)
