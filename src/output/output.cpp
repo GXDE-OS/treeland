@@ -6,6 +6,7 @@
 #include "cmdline.h"
 #include "common/treelandlogging.h"
 #include "core/rootsurfacecontainer.h"
+#include "modules/dde-shell/ddeshellmanagerinterfacev1.h"
 #include "outputconfig.hpp"
 #include "seat/helper.h"
 #include "surface/surfacewrapper.h"
@@ -558,6 +559,30 @@ bool Output::removeExclusiveZone(QObject *object)
     return false;
 }
 
+void Output::rearrangeDDEShellLayerSurface(SurfaceWrapper *surface)
+{
+    if (surface && surface->type() == SurfaceWrapper::Type::Layer) {
+        arrangeLayerSurface(surface);
+    }
+}
+
+// 找子菜单的父菜单: 同输出上另一个带 dde-shell 接口、已映射的 layer surface。
+// dde-shell 的 layer surface 实际只有 com.deepin.menu 菜单会创建, 且同一时刻只有一条菜单链,
+// 故"另一个 dde-shell layer surface(取最近的)"即父菜单。返回 nullptr 表示本身就是顶层菜单。
+static SurfaceWrapper *findDDEShellParentMenu(Output *output, SurfaceWrapper *self)
+{
+    SurfaceWrapper *parent = nullptr;
+    for (auto *s : output->surfaces()) {
+        if (s == self || s->type() != SurfaceWrapper::Type::Layer || !s->surface()) {
+            continue;
+        }
+        if (DDEShellSurfaceInterface::get(s->surface())) {
+            parent = s;
+        }
+    }
+    return parent;
+}
+
 void Output::arrangeLayerSurface(SurfaceWrapper *surface)
 {
     WLayerSurface *layer = qobject_cast<WLayerSurface *>(surface->shellSurface());
@@ -620,6 +645,35 @@ void Output::arrangeLayerSurface(SurfaceWrapper *surface)
     }
 
     surface->setSize(surfaceGeo.size());
+
+    // dde-shell 菜单(layer surface)定位。动态查询接口而非依赖缓存标志 —— layer surface 常先于
+    // 客户端的 dde_shell 请求被添加, 那时接口尚不存在; 本函数在 map/commit 排布时运行, 接口已就绪。
+    if (auto *ddeShell = DDEShellSurfaceInterface::get(surface->surface())) {
+        if (ddeShell->surfacePos().has_value()) {
+            // 子菜单: 客户端经 set_surface_position 提交了"相对父菜单左上角的偏移"(Wayland 下客户端
+            // 拿不到全局坐标)。找到父菜单, 用其"实际几何位置 + 偏移"定位。父菜单稳定 => 子菜单稳定,
+            // 即使子菜单 layer surface 在 hover 时被反复重建也落在同一处, 不会跟随鼠标。
+            if (SurfaceWrapper *parent = findDDEShellParentMenu(this, surface)) {
+                QPointF pos = parent->geometry().topLeft() + QPointF(ddeShell->surfacePos().value());
+                QRectF geo = surface->normalGeometry();
+                geo.moveTopLeft(pos);
+                surface->moveNormalGeometryInOutput(geo.topLeft());
+                return;
+            }
+        }
+        // 顶层菜单: 经 set_auto_placement 请求按全局光标定位。只锁存一次(存入 clientRequstPos),
+        // 此后重排沿用该固定点, 避免随实时光标漂移。
+        if (ddeShell->yOffset().has_value()) {
+            if (surface->clientRequstPos().isNull()) {
+                QPointF cursorPos = Helper::instance()->seat()->cursor()->position();
+                cursorPos.setY(cursorPos.y() + ddeShell->yOffset().value());
+                surface->setClientRequstPos(cursorPos.toPoint());
+            }
+            placeClientRequstPos(surface, surface->clientRequstPos());
+            return;
+        }
+    }
+
     surface->setPosition(surfaceGeo.topLeft());
 }
 

@@ -1,3 +1,10 @@
+treeland (0.9.0-gxde1) unstable; urgency=medium
+
+  * 修复了菜单定位不准的问题
+  * 新增了一个私有协议: 其它程序可以通过检测此协议是否存在来判定是不是GXDE版
+
+ -- CharOfString <markus_verify@126.com>  Sat, 14 May 2026 19:46:27 +0800
+
 treeland (0.8.9) unstable; urgency=medium
 
   * feat: disable maximize for non-maximizable windows
@@ -100,7 +107,7 @@ treeland (0.8.7) unstable; urgency=medium
   * fix(build): add missing headers for gcc 16 compatibility
 
  -- rewine <luhongxu@deepin.org>  Fri, 22 May 2026 10:02:44 +0800
-
+ 
 treeland (0.8.6) unstable; urgency=medium
 
   * fix: fix multiple crashes caused by thread affinity and use-after-

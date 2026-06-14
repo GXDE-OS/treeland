@@ -54,6 +54,7 @@ class SurfaceWrapper : public QQuickItem
     Q_PROPERTY(State previousSurfaceState READ previousSurfaceState NOTIFY previousSurfaceStateChanged FINAL)
     Q_PROPERTY(State surfaceState READ surfaceState NOTIFY surfaceStateChanged BINDABLE bindableSurfaceState FINAL)
     Q_PROPERTY(qreal radius READ radius NOTIFY radiusChanged FINAL)
+    Q_PROPERTY(QRectF contentGeometry READ contentGeometry NOTIFY contentGeometryChanged FINAL)
     Q_PROPERTY(SurfaceContainer* container READ container NOTIFY containerChanged FINAL)
     Q_PROPERTY(QQuickItem* titleBar READ titleBar NOTIFY noTitleBarChanged FINAL)
     Q_PROPERTY(QQuickItem* decoration READ decoration NOTIFY noDecorationChanged FINAL)
@@ -200,6 +201,8 @@ public:
     qreal radius() const;
     void setRadius(qreal newRadius);
 
+    QRectF contentGeometry() const;
+
     SurfaceContainer *container() const;
 
     void addSubSurface(SurfaceWrapper *surface);
@@ -320,6 +323,7 @@ Q_SIGNALS:
     void previousSurfaceStateChanged();
     void surfaceStateChanged();
     void radiusChanged();
+    void contentGeometryChanged();
     void requestMove(); // for titlebar
     void requestResize(Qt::Edges edges);
     void requestShowWindowMenu(QPointF pos);

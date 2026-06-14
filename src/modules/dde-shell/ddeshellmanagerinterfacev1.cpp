@@ -262,9 +262,14 @@ public:
     DDEShellSurfaceInterfacePrivate(DDEShellSurfaceInterface *_q,
                                     wl_resource *surface,
                                     wl_resource *resource);
+    ~DDEShellSurfaceInterfacePrivate();
 
     DDEShellSurfaceInterface *q;
     wl_resource *surfaceResource{ nullptr };
+    // 监听底层 wl_surface 的销毁。dde_shell_surface 资源的生命周期独立于 wl_surface,
+    // 若 wl_surface 先销毁(如菜单关闭)而本接口未及时失效, 后续 get()/wSurface() 会解引用
+    // 悬垂的 surfaceResource 而崩溃。见 ddeShellSurfaceHandleSurfaceDestroy。
+    wl_listener surfaceDestroy;
     std::optional<QPoint> surfacePos;
     std::optional<DDEShellSurfaceInterface::Role> role;
     // if m_yOffset has_value, preventing surface from being displayed beyond
@@ -294,6 +299,18 @@ protected:
                                                                  uint32_t accept) override;
 };
 
+// wl_surface 销毁回调: 把对应接口失效(置空 surfaceResource 并移出 s_shellSurfaces),
+// 避免之后 get()/wSurface() 遍历到本接口时解引用悬垂 resource 而崩溃。
+// 不在此 delete q —— q 的生命周期归 dde_shell_surface 资源(destroy_resource)所有, 否则会双重释放。
+static void ddeShellSurfaceHandleSurfaceDestroy(wl_listener *listener, [[maybe_unused]] void *data)
+{
+    DDEShellSurfaceInterfacePrivate *d = wl_container_of(listener, d, surfaceDestroy);
+    wl_list_remove(&d->surfaceDestroy.link);
+    wl_list_init(&d->surfaceDestroy.link);
+    d->surfaceResource = nullptr;
+    s_shellSurfaces.removeOne(d->q);
+}
+
 DDEShellSurfaceInterfacePrivate::DDEShellSurfaceInterfacePrivate(DDEShellSurfaceInterface *_q,
                                                                  wl_resource *surface,
                                                                  wl_resource *resource)
@@ -301,6 +318,15 @@ DDEShellSurfaceInterfacePrivate::DDEShellSurfaceInterfacePrivate(DDEShellSurface
     , q(_q)
     , surfaceResource(surface)
 {
+    surfaceDestroy.notify = ddeShellSurfaceHandleSurfaceDestroy;
+    wl_resource_add_destroy_listener(surface, &surfaceDestroy);
+}
+
+DDEShellSurfaceInterfacePrivate::~DDEShellSurfaceInterfacePrivate()
+{
+    // 资源(dde_shell_surface)先于 wl_surface 销毁时, 摘除仍挂在 wl_surface 上的监听,
+    // 防止其稍后回调到已释放的本对象。若 wl_surface 已先销毁, 回调里已 remove+init, 此处再 remove 亦安全。
+    wl_list_remove(&surfaceDestroy.link);
 }
 
 void DDEShellSurfaceInterfacePrivate::destroy_resource([[maybe_unused]] Resource *resource)
@@ -415,6 +441,11 @@ DDEShellSurfaceInterface::~DDEShellSurfaceInterface() = default;
 
 WSurface *DDEShellSurfaceInterface::wSurface() const
 {
+    // surfaceResource 在底层 wl_surface 销毁后被置空(见 ddeShellSurfaceHandleSurfaceDestroy),
+    // 此时不可再解引用, 否则 wlr_surface_from_resource 会崩。
+    if (!d->surfaceResource) {
+        return nullptr;
+    }
     return WSurface::fromHandle(qw_surface::from(wlr_surface_from_resource(d->surfaceResource)));
 }
 

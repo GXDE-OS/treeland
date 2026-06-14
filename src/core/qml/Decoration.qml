@@ -73,7 +73,9 @@ Item {
     }
 
     Border {
+        // layer-shell表面(如 com.deepin.menu用layer-shell弹的菜单)不应被加窗口装饰边框
         visible: surface.visibleDecoration
+                    && surface.type !== SurfaceWrapper.Type.Layer
         parent: surface.surfaceItem ? surface.surfaceItem : surface.prelaunchSplash
         z: SurfaceItem.ZOrder.ContentItem + 1
         anchors.fill: parent

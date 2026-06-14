@@ -167,14 +167,19 @@ protected:
                       int32_t x,
                       int32_t y,
                       uint32_t serial) override
+    void set_position([[maybe_unused]] Resource *resource,
+                      int32_t x,
+                      int32_t y,
+                      uint32_t serial) override
     {
         if (!m_wrapper) {
             return;
         }
 
-        qCDebug(treelandProtocol) << "set_position serial" << x << y << serial << "for window_id"
+        qCDebug(treelandProtocol) << "set_position serial" << x << y << "serial" << serial << serial << "for window_id"
                                   << m_windowId;
 
+        m_lastConfigureSerial = serial;
         m_wrapper->setPositionAutomatic(false);
         // Suppress only this class's xChanged/yChanged handlers to avoid
         // emitting a serial=0 event alongside the client-requested one.
@@ -230,11 +235,17 @@ private:
     // serial=0 means compositor-initiated (not in response to a client set_position)
     void sendConfigurePosition(uint32_t serial = 0)
     {
+        // serial: 回显最近一次 set_position 的 serial(无对应请求时为 0), 发送后清零
+        const uint32_t serial = m_lastConfigureSerial;
+        m_lastConfigureSerial = 0;
         if (m_wrapper) {
             send_configure_position(static_cast<int32_t>(m_wrapper->x()),
                                     static_cast<int32_t>(m_wrapper->y()),
                                     serial);
+                                    static_cast<int32_t>(m_wrapper->y()),
+                                    serial);
         } else {
+            send_configure_position(0, 0, serial);
             send_configure_position(0, 0, serial);
         }
     }
@@ -300,6 +311,7 @@ private:
     uint32_t m_windowId = 0;
     SurfaceWrapper *m_wrapper = nullptr;
     bool m_suppressPositionEvents = false;
+    uint32_t m_lastConfigureSerial = 0; // 最近一次 set_position 的 serial, 供 configure_position 回显
 };
 
 void WineWindowManagerPrivate::get_window_control(Resource *resource,

@@ -67,6 +67,10 @@ public:
     void addSurface(SurfaceWrapper *surface) override;
     void removeSurface(SurfaceWrapper *surface) override;
 
+    // 供 dde-shell 定位晚于 layer surface 排布到达时(如 com.deepin.menu 子菜单)外部触发重排,
+    // 使其按 set_auto_placement 的光标定位重新摆放。仅对 Layer 类型生效。
+    void rearrangeDDEShellLayerSurface(SurfaceWrapper *surface);
+
     WOutput *output() const;
     WOutputItem *outputItem() const;
 
