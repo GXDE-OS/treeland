@@ -357,9 +357,11 @@ void SurfaceWrapper::setup()
         setImplicitSize(m_surfaceItem->implicitWidth(), m_surfaceItem->implicitHeight());
         connect(m_surfaceItem, &WSurfaceItem::implicitWidthChanged, this, [this] {
             setImplicitWidth(m_surfaceItem->implicitWidth());
+            Q_EMIT contentGeometryChanged(); // 窗口几何随尺寸变化, 通知模糊/圆角裁剪刷新
         });
         connect(m_surfaceItem, &WSurfaceItem::implicitHeightChanged, this, [this] {
             setImplicitHeight(m_surfaceItem->implicitHeight());
+            Q_EMIT contentGeometryChanged();
         });
         connect(m_surfaceItem,
                 &WSurfaceItem::boundingRectChanged,
@@ -1094,7 +1096,9 @@ void SurfaceWrapper::setNoDecoration(bool newNoDecoration)
         return;
 
     m_noDecoration = newNoDecoration;
-    setNoCornerRadius(newNoDecoration);
+    // 不再让"无服务端装饰"等同"无圆角": 无边框/CSD 窗口同样由合成器裁圆角。
+    // noCornerRadius 仅随窗口状态(最大化/全屏/平铺)变化, 见 setSurfaceState。
+    // setNoCornerRadius(newNoDecoration);
 
     updateDecoration();
 }
@@ -2003,6 +2007,7 @@ bool SurfaceWrapper::showOnWorkspace(int workspaceIndex) const
     return showOnAllWorkspace();
 }
 
+<<<<<<< HEAD
 bool SurfaceWrapper::isResizable() const
 {
     return m_resizable;
@@ -2011,6 +2016,22 @@ bool SurfaceWrapper::isResizable() const
 bool SurfaceWrapper::isMaximizable() const
 {
     return m_maximizable;
+=======
+QRectF SurfaceWrapper::contentGeometry() const
+{
+    if (!m_shellSurface)
+        return {};
+
+    // xdg window geometry(surface-local 坐标): xdg toplevel/popup 的 CSD 应用(如 DTK)会把它设成
+    // 排除自绘阴影边距的真实窗口区域, 用于把模糊裁剪到真实窗口(见 SurfaceContent.qml)。
+    // layer surface 没有该概念, getContentGeometry() 返回整面 surface, 此处直接返回(模糊填满整面,
+    // 与原行为一致)。注意: 不再用 wl_surface input region 收窄 —— 对 layer 菜单(尤其 dock 的箭头
+    // 菜单 DArrowRectangle)会把模糊裁成错误形状。
+    const QRectF cg = m_shellSurface->getContentGeometry();
+    if (!cg.isValid() || cg.isEmpty())
+        return {};
+    return cg;
+>>>>>>> e734deb6 (fix: 修复了菜单定位不准的问题 & 新增了一个私有协议: 其它程序可以通过检测此协议是否存在来判定是不是GXDE版)
 }
 
 bool SurfaceWrapper::blur() const

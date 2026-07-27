@@ -33,6 +33,7 @@
 #include "modules/capture/capture.h"
 #include "modules/dde-shell/ddeshellattached.h"
 #include "modules/dde-shell/ddeshellmanagerinterfacev1.h"
+#include "modules/gxde-info/gxdetreelandinfov1.h"
 #include "modules/ddm/ddminterfacev1.h"
 #include "modules/input-manager/inputmanagerinterfacev1.h"
 #include "modules/keyboard-state-notify/keyboardstatenotifymanagerinterfacev1.h"
@@ -1306,6 +1307,9 @@ void Helper::init(Treeland::Treeland *treeland)
     connect(m_backend, &WBackend::outputAdded, this, &Helper::onOutputAdded);
     connect(m_backend, &WBackend::outputRemoved, this, &Helper::onOutputRemoved);
 
+    // GXDE fork 身份标识 global(上游原版 treeland 没有), 供客户端检测当前为 GXDE 定制版 treeland。
+    m_server->attach<GxdeTreelandInfoV1>();
+
     m_ddeShellV1 = m_server->attach<DDEShellManagerInterfaceV1>();
     connect(m_ddeShellV1, &DDEShellManagerInterfaceV1::toggleMultitaskview, this, [this] {
         if (m_multitaskView) {
@@ -1320,6 +1324,37 @@ void Helper::init(Treeland::Treeland *treeland)
             &DDEShellManagerInterfaceV1::lockScreenCreated,
             this,
             &Helper::handleLockScreen);
+
+    // dde-shell 的 layer surface(如 com.deepin.menu 用 layer-shell 弹的菜单)定位修正:
+    // 这类客户端常先建 layer surface 再发 dde_shell 的 set_auto_placement, 故 layer surface 首次
+    // 排布时 dde-shell 定位往往还没到, 菜单会落到 anchor 默认位(屏幕角落)。这里在 dde-shell
+    // surface 创建及其定位(yOffset/position)变化时, 主动重排对应的 layer surface, 使其按光标定位。
+    connect(m_ddeShellV1,
+            &DDEShellManagerInterfaceV1::surfaceCreated,
+            this,
+            [this](DDEShellSurfaceInterface *interface) {
+                auto rearrange = [this, interface] {
+                    WSurface *ws = interface->wSurface();
+                    if (!ws) {
+                        return;
+                    }
+                    SurfaceWrapper *wrapper = m_rootSurfaceContainer->getSurface(ws);
+                    if (wrapper && wrapper->type() == SurfaceWrapper::Type::Layer
+                        && wrapper->ownsOutput()) {
+                        wrapper->ownsOutput()->rearrangeDDEShellLayerSurface(wrapper);
+                    }
+                };
+                connect(interface,
+                        &DDEShellSurfaceInterface::yOffsetChanged,
+                        this,
+                        [rearrange](uint32_t) { rearrange(); });
+                connect(interface,
+                        &DDEShellSurfaceInterface::positionChanged,
+                        this,
+                        [rearrange](QPoint) { rearrange(); });
+                rearrange();
+            });
+
     m_shellHandler->createComponent(engine, m_renderWindow->contentItem());
 
     m_foreignToplevel = m_server->attach<WForeignToplevel>();
@@ -1550,6 +1585,8 @@ void Helper::init(Treeland::Treeland *treeland)
     m_sessionManager->updateActiveUserSession(QStringLiteral("dde"), 0);
     connect(m_userModel, &UserModel::userLoggedIn, m_sessionManager, &SessionManager::updateActiveUserSession);
     m_xdgDecorationManager = m_server->attach<WXdgDecorationManager>();
+    // 保持 waylib 默认 preferredMode=Server: DTK 应用在 treeland 下改走"合成器原生装饰"
+    // (服务端边框/阴影), 不再自绘 CSD 阴影。详见 dtk2widget / 文件管理器侧的对应改动。
     connect(m_xdgDecorationManager,
             &WXdgDecorationManager::surfaceModeChanged,
             this,

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="gxde_treeland_info_v1">
+  <copyright>
+    Copyright (C) 2026 CharOfString
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+  </copyright>
+
+  <interface name="gxde_treeland_info_v1" version="1">
+    <description summary="GXDE fork treeland identification">
+      This is an identification protocol. Other apps can use it to detect
+      that this is not original treeland but the fork patched by GXDE team.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the object">
+        Destory object.
+      </description>
+    </request>
+
+    <event name="info">
+      <description summary="fork identity, sent once on bind">
+        fork identity, sent once on bind
+      </description>
+      <arg name="vendor" type="string" summary="Vendor name"/>
+      <arg name="treeland_version" type="string" summary="Baseline VER."/>
+      <arg name="patch" type="string" summary="patch id"/>
+    </event>
+  </interface>
+</protocol>

@@ -18,7 +18,16 @@ Item {
     opacity: content.alphaModifier
 
     Loader {
-        anchors.fill: parent
+        id: blurLoader
+
+        // 把模糊裁剪到真实窗口几何(排除 CSD 应用自绘的透明阴影边距), 避免模糊溢出到窗口四周。
+        readonly property rect cg: wrapper?.contentGeometry ?? Qt.rect(0, 0, 0, 0)
+        readonly property bool hasCg: cg.width > 0 && cg.height > 0
+
+        x: hasCg ? cg.x : 0
+        y: hasCg ? cg.y : 0
+        width: hasCg ? cg.width : root.width
+        height: hasCg ? cg.height : root.height
         active: wrapper?.blur ?? false
         sourceComponent: Blur {
             anchors.fill: parent
@@ -52,9 +61,10 @@ Item {
 
             if (!root.wrapper)
                 return false;
+            // 圆角裁剪不再要求"服务端装饰(decoration 非空)": 无边框/CSD 窗口(如 DTK 应用,
+            // 自绘标题栏)也由合成器统一裁圆角。仍受 noCornerRadius(最大化/全屏/平铺时关闭)约束。
             return (cornerRadius > 0) &&
                     !root.wrapper.noCornerRadius &&
-                    root.wrapper.decoration &&
                     root.wrapper.visibleDecoration;
         }
 
